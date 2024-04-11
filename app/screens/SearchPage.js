@@ -15,12 +15,14 @@ const SearchPage = () => {
     
     const handleReturn = (event) => {
     
-        //Create components that produce an Artistlist, album listm, etc
+        //Create components that produce an Artist list, album list, etc
 
     };
     
     useEffect(() => {
         // const spotifyTestData = JSON.stringify(SpotifySetup(searchVal));
+        // console.log(spotifyTestData)
+
         console.log(searchVal);
        
     });

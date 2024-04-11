@@ -24,10 +24,10 @@ const firebaseConfig = {
 //Using firebase 10.3 or something so this might be different syntax
 const app = initializeApp(firebaseConfig);
 
-//const auth = getAuth(app);
-const auth = initializeAuth(app, {
-  persistence: getReactNativePersistence(ReactNativeAsyncStorage)
-});
+const auth = getAuth(app);
+// const auth = initializeAuth(app, {
+//   persistence: getReactNativePersistence(ReactNativeAsyncStorage)
+// });
 
 // Initialize Cloud Firestore and get a reference to the service
 const db = getFirestore(app);
