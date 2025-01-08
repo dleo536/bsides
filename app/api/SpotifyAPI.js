@@ -17,7 +17,6 @@ const SpotifySetup = ({ artist }) => {
     const [accessToken, setAccessToken] = useState("");
     const [albums, setAlbums] = useState("");
     
-useEffect(() => {
     //API access token
     var authParameters = {
         method: 'POST',
@@ -29,8 +28,6 @@ useEffect(() => {
     fetch('https://accounts.spotify.com/api/token', authParameters)
     .then(result => result.json())
     .then(data => setAccessToken(data.access_token))
-
-}, [])
 
     async function search(){
         
@@ -59,27 +56,7 @@ useEffect(() => {
     //  const searchHelper = useCallback(search, [artist]);
     //  searchHelper();
 return (albums)
-//   return (
-    
-//     <View style={styles.container}>
-//     <Text style={styles.title}>Top Albums for {artist}</Text>
-//     <FlatList
-//       data={albums}
-//       keyExtractor={(item) => item.name}
-//       renderItem={({ item }) => 
-//       <View>
-//       <Image source = {item.images[0]} style = {styles.image}></Image>    
-//       <Text>{item.name}</Text>
-//       <Text>{item.listeners}</Text>
-//       </View>
-  
-  
-// }
 
-//     />
-//   </View>
-    
-//   )
   
 }
 

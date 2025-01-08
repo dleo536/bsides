@@ -4,12 +4,14 @@ import axios from 'axios';
 
 
 const AlbumList = ({SpotifyData}) =>{
+  console.log(SpotifyData)
 
     return(
         <View style={styles.container}>
         <Text style={styles.title}>Top Albums for Somone</Text>
+        
         <FlatList
-          data={SpotifyData}
+          
           keyExtractor={(item) => item.name}
           renderItem={({ item }) => 
           <View>
@@ -22,6 +24,7 @@ const AlbumList = ({SpotifyData}) =>{
     }
     
         />
+      
       </View>
     )
 
