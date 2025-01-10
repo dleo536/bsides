@@ -2,7 +2,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity} from 'react-nativ
 import React from 'react'
 import GetAlbumList from '../data/GetAlbumList'
 import GetCoverArt from '../data/GetCoverArt'
-import { auth } from '../config/firebase'
+import { auth } from '../config/firebase.js'
 import { useNavigation } from '@react-navigation/native'
 import { getAuth, signOut } from "firebase/auth";
 
