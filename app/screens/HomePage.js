@@ -1,89 +1,245 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity} from 'react-native'
-import React from 'react'
-import GetAlbumList from '../data/GetAlbumList'
-import GetCoverArt from '../data/GetCoverArt'
-import { auth } from '../config/firebase.js'
-import { useNavigation } from '@react-navigation/native'
-import { getAuth, signOut } from "firebase/auth";
+import React, { useEffect, useState } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  RefreshControl,
+  ActivityIndicator,
+  Dimensions,
+  Button,
+  TouchableOpacity,
+  Image,
+} from "react-native";
+import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
+import { getAllReviews } from "../api/ReviewAPI.js";
+import ReviewElement from "../components/reviewElement.js";
+import ListElement from "../components/listElement.js";
+import { TabView, SceneMap, TabBar } from "react-native-tab-view";
+import { getAllLists, getHasMore } from "../api/ListAPI.js";
+import { createMaterialTopTabNavigator } from "@react-navigation/material-top-tabs";
+
+const Tab = createMaterialTopTabNavigator();
+
+const limit = 5;
+
+const ReviewList = ({ fetchFunction }) => {
+  const [data, setData] = useState([]);
+  const [offset, setOffset] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [selectedButton, setSelectedButton] = useState("List");
+  const fetchData = async () => {
+    if (loading || !hasMore) return;
+
+    setLoading(true);
+    try {
+      const response = await getAllReviews(limit, offset);
+      console.log(response);
+      setData((prev) => [...prev, ...response]);
+      setOffset((prev) => prev + response.length);
+
+      if (response.length < limit) {
+        setHasMore(false);
+      }
+    } catch (error) {
+      console.error("Error fetching data:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {}, []);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    setData([]);
+    setOffset(0);
+    setHasMore(true);
+    setTimeout(() => {
+      fetchData();
+      setRefreshing(false);
+    }, 1000);
+  };
+
+  const loadMore = () => {
+    if (!loading && hasMore) {
+      setLoading(true);
+      fetchData().finally(() => setLoading(false));
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.reviewButtonContainer}>
+        {["List", "Grid"].map((index) => (
+          <View key={index} style={styles.searchButton}>
+            <Button
+              title={index}
+              onPress={() => {
+                setSelectedButton(index);
+                console.log("button pressed", index);
+              }}
+              color={selectedButton === index ? "blue" : "gray"}
+            />
+          </View>
+        ))}
+      </View>
+      <FlatList
+        data={data}
+        style={{ paddingBottom: 20 }}
+        keyExtractor={(item) => item.id.toString()}
+        renderItem={({ item }) => {
+          if (selectedButton === "List") {
+            return <ReviewElement review={item} />;
+          } else if (selectedButton === "Grid") {
+            return (
+              <View style={styles.gridContainer}>
+                <TouchableOpacity>
+                  <Image
+                    source={{ uri: item.albumCover }}
+                    style={[
+                      styles.gridImage,
+                      selectedButton === "Grid" && styles.reviewBox,
+                      {
+                        padding: 10 - item.rating,
+                      },
+                    ]}
+                  />
+                </TouchableOpacity>
+              </View>
+            );
+          }
+        }}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={loading ? <ActivityIndicator /> : null}
+        contentContainerStyle={[
+          styles.reviews,
+          selectedButton === "List" && styles.listReviews,
+          selectedButton === "Grid" && styles.gridReviews,
+        ]}
+      />
+    </View>
+  );
+};
+const ListList = ({ fetchFunction }) => {
+  const [data, setData] = useState([]);
+  const [offset, setOffset] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+
+  const fetchData = async () => {
+    if (loading || !hasMore) return;
+
+    setLoading(true);
+    try {
+      const response = await getAllLists(limit, offset);
+      setData((prev) => [...prev, ...response]);
+      setOffset((prev) => prev + response.length);
+
+      if (response.length < limit) {
+        setHasMore(false);
+      }
+    } catch (error) {
+      console.error("Error fetching data:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {}, []);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    setData([]);
+    setOffset(0);
+    setHasMore(true);
+    setTimeout(() => {
+      fetchData();
+      setRefreshing(false);
+    }, 1000);
+  };
+
+  const loadMore = () => {
+    if (!loading && hasMore) {
+      console.log("Loading more Lists nooooooo!!!");
+      setLoading(true);
+      fetchData().finally(() => setLoading(false));
+    }
+  };
+
+  return (
+    <FlatList
+      data={data}
+      keyExtractor={(item) => item.id.toString()}
+      renderItem={({ item }) => <ListElement list={item} />}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+      }
+      onEndReached={loadMore}
+      onEndReachedThreshold={0.5}
+      ListFooterComponent={loading ? <ActivityIndicator /> : null}
+      contentContainerStyle={styles.reviews}
+    />
+  );
+};
+
+// const FirstRoute = () => <ReviewList fetchFunction={getAllReviews} />;
+// const SecondRoute = () => <ListList fetchFunction={getAllLists} />; // Replace with different API if needed
 
 const HomePage = () => {
-    const navigation = useNavigation()
-    const handleSignOut = () => {
-        const auth = getAuth();
-        signOut(auth).then(() => {
-            navigation.replace("Login")
-        }).catch((error) => {
-            // An error happened.
-        });
-    }
+  //const layout = Dimensions.get("window");
 
-    return (
-        <View style={styles.container}>
-            <Text>Home page</Text>
-            <Text> Email: {auth.currentUser?.email}</Text>
-            <TouchableOpacity
-                onPress={handleSignOut}
-                style={styles.button}>
-                    <Text style={styles.buttonText}>Sign Out</Text>
-                </TouchableOpacity>
-            <ScrollView style={styles}>
-            {/* <GetCoverArt></GetCoverArt> */}
-            </ScrollView>
-            
-            
-        </View>
-    )
-}
+  return (
+    <Tab.Navigator>
+      <Tab.Screen name="Reviews" component={ReviewList} />
+      <Tab.Screen name="Lists" component={ListList} />
+    </Tab.Navigator>
+  );
+};
+
 const styles = StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: '#fff',
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    inputContainer:{
-      width: '80%'
-    },
-    input:{
-      backgroundColor:'white',
-      paddingHorizontal: 15,
-      paddingVertical: 10,
-      borderRadius: 10,
-      marginTop: 40
-    },
-    buttonContainer:{
-      width: '60%',
-      justifyContent: 'center',
-      alignItems: 'center',
-      marginTop: 40
-    },
-    buttonOutline:{
-      backgroundColor: 'white',
-      marginTop: 5,
-      borderColor: '#0782F9',
-      borderWidth: 2,
-  
-    },
-    button:{
-      backgroundColor: '#0782F9',
-      width: '60%',
-      padding: 15,
-      borderRadius: 10,
-      alignItems: 'center',
-      justifyContent: 'center',
-      
-    },
-    buttonText:{
-      color:'white',
-      fontWeight: '700',
-      fontSize:16
-    },
-    buttonOutlineText:{
-      color:'#0782F9',
-      fontWeight: '700',
-      fontSize:16
-    } 
-    
-  });
+  container: {
+    flex: 1,
+  },
+  reviewButtonContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    backgroundColor: "transparent",
+  },
+  reviews: {
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+  },
+  gridImage: {
+    width: 110,
+    height: 110,
+
+    borderRadius: 2,
+    flexDirection: "row",
+  },
+  gridContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+  },
+  listReviews: {
+    flexDirection: "column",
+  },
+  gridReviews: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+  },
+});
 
 export default HomePage;
