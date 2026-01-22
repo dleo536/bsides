@@ -16,11 +16,13 @@ import { useNavigation } from "@react-navigation/native";
 import LastFmTopAlbums from "../api/LastFM";
 import { getAlbumsByName, getArtistsByName } from "../api/SpotifyAPI";
 import AlbumList from "../api/AlbumList";
-import { useQuery } from "react-query";
+import { useQuery } from "@tanstack/react-query";
 import AlbumPage from "./AlbumPage";
 import debounce from "lodash/debounce";
 import { getLabels, getMusicians } from "../api/Discogs";
 import ArtistPage from "./ArtistPage";
+import { getUsersByUsername } from "../api/UserAPI";
+import UserPage from "./UserPage";
 
 const CLIENT_ID = "35328aeb78ec43cbbb12afc948cdc687";
 const SECRET = "e284561d79744d4db2086e526e9d15d0";
@@ -71,7 +73,8 @@ const SearchPage = () => {
           console.log("switched to artist");
           //setAlbums((prev) => (append ? [...prev, ...response] : response));
         } else if (buttonIndex === "User") {
-          response = await getUsersByName(text);
+          console.log("switched to user");
+          response = await getUsersByUsername(text);
         } else if (buttonIndex === "Musician") {
           response = await getMusicians(text);
         } else {
@@ -143,7 +146,7 @@ const SearchPage = () => {
         ></TextInput>
       </View>
       <View style={styles.searchButtonContainer}>
-        {["Artist", "Album", "Musician", "Label"].map((index) => (
+        {["Artist", "Album", "User", "List", "Musician"].map((index) => (
           <View key={index} style={styles.searchButton}>
             <Button
               title={index}
@@ -212,22 +215,18 @@ const SearchPage = () => {
                 </TouchableOpacity>
                 // </TouchableOpacity>
               );
-            } else if (selectedButton === "Musician") {
+            } else if (selectedButton === "User") {
               return (
                 <View style={styles.rowContainer}>
                   <TouchableOpacity
                     onPress={() =>
-                      navigation.push("MusicianPage", {
-                        musician: item,
+                      navigation.push("UserPage", {
+                        user: item,
                         key: Math.round(Math.random() * 10000000),
                       })
                     }
                   >
-                    <Image
-                      source={{ uri: item.cover_image }}
-                      style={styles.image}
-                    />
-                    <Text style={styles.albumName}>{item.title}</Text>
+                    <Text style={styles.albumName}>{item.username}</Text>
                   </TouchableOpacity>
                   {/* Customize more for Musician */}
                 </View>

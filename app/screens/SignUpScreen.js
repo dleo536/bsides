@@ -21,6 +21,8 @@ import { useNavigation } from "@react-navigation/native";
 import { collection, doc, addDoc } from "firebase/firestore";
 import ProfilePage from "./ProfilePage";
 //import App from '../../App';
+import { postListWithType } from "../api/ListAPI";
+import { patchUser } from "../api/UserAPI";
 
 export default function SignUpScreen() {
   const [email, setEmail] = useState("");
@@ -37,10 +39,10 @@ export default function SignUpScreen() {
     });
     return unsubscribe;
   }, []);
-
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const handleSignUp = async () => {
     await createUserWithEmailAndPassword(auth, email, password)
-      .then((cred) => {
+      .then(async (cred) => {
         // console.log(cred.user.uid);
         const localUser = cred.user;
         updateProfile(auth.currentUser, {
@@ -54,8 +56,35 @@ export default function SignUpScreen() {
             console.log(error);
           });
         if (localUser) {
-          pushUsername(cred.user.uid);
-          postUsername(localUser);
+          await pushUsername(cred.user.uid);
+          await postUsername(localUser);
+          await sleep(2000);
+          let backlogListId;
+          let favoriteListId;
+          try {
+            backlogListId = await postListWithType(localUser.uid, "backlog");
+
+            if (!backlogListId || typeof backlogListId !== "string") {
+              throw new Error(
+                "Failed to create backlog list or invalid ID returned."
+              );
+            }
+
+            // Proceed with using backlogListId
+          } catch (err) {
+            console.error("Failed to assign backlogListId:", err);
+            // Optionally show user feedback or retry logic
+          }
+
+          try {
+            favoriteListId = await postListWithType(localUser.uid, "favorite");
+          } catch (err) {
+            console.error("Failed to assign favoriteListId:", err);
+          }
+          await patchUser(localUser.uid, backlogListId, favoriteListId);
+          console.log("User patched with uid:", localUser.uid);
+          console.log("Backlog List ID:", backlogListId);
+          console.log("Favorite List ID:", favoriteListId);
         }
       })
       .catch((error) => {
@@ -93,10 +122,8 @@ export default function SignUpScreen() {
         email: localUser.email,
         username: username,
         "profile-picture": null,
-        "want-to-listen": [
-          "cd76f76b-ff15-3784-a71d-4da3078a6851",
-          "b1392450-e666-3926-a536-22c65f834433",
-        ],
+        backlogListId: "",
+        favoriteListId: "",
         followers: null,
         following: null,
         "liked-lists": null,
@@ -109,7 +136,7 @@ export default function SignUpScreen() {
         fetchData
       );
       const json = await response.json();
-      console.log("Niceeee!!!!!!!");
+      console.log("Created User", json);
     } catch (error) {
       console.error(error);
       console.log("This be throwing an error!");

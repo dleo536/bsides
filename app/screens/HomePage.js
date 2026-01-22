@@ -11,7 +11,9 @@ import {
   TouchableOpacity,
   Image,
 } from "react-native";
-import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
+// import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
+import { SafeAreaView, SafeAreaProvider } from "react-native";
+import { useNavigation } from "@react-navigation/native";
 import { getAllReviews } from "../api/ReviewAPI.js";
 import ReviewElement from "../components/reviewElement.js";
 import ListElement from "../components/listElement.js";
@@ -24,6 +26,7 @@ const Tab = createMaterialTopTabNavigator();
 const limit = 5;
 
 const ReviewList = ({ fetchFunction }) => {
+  const navigation = useNavigation();
   const [data, setData] = useState([]);
   const [offset, setOffset] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
@@ -92,11 +95,23 @@ const ReviewList = ({ fetchFunction }) => {
         keyExtractor={(item) => item.id.toString()}
         renderItem={({ item }) => {
           if (selectedButton === "List") {
-            return <ReviewElement review={item} />;
+            return (
+              <TouchableOpacity
+                onPress={() =>
+                  navigation.navigate("ReviewPage", { review: item })
+                }
+              >
+                <ReviewElement review={item} />
+              </TouchableOpacity>
+            );
           } else if (selectedButton === "Grid") {
             return (
               <View style={styles.gridContainer}>
-                <TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() =>
+                    navigation.navigate("ReviewPage", { review: item })
+                  }
+                >
                   <Image
                     source={{ uri: item.albumCover }}
                     style={[
@@ -128,6 +143,7 @@ const ReviewList = ({ fetchFunction }) => {
   );
 };
 const ListList = ({ fetchFunction }) => {
+  const navigation = useNavigation();
   const [data, setData] = useState([]);
   const [offset, setOffset] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
@@ -178,7 +194,13 @@ const ListList = ({ fetchFunction }) => {
     <FlatList
       data={data}
       keyExtractor={(item) => item.id.toString()}
-      renderItem={({ item }) => <ListElement list={item} />}
+      renderItem={({ item }) => (
+        <TouchableOpacity
+          onPress={() => navigation.navigate("ListPage", { list: item })}
+        >
+          <ListElement list={item} />
+        </TouchableOpacity>
+      )}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
       }
@@ -195,7 +217,7 @@ const ListList = ({ fetchFunction }) => {
 
 const HomePage = () => {
   //const layout = Dimensions.get("window");
-
+  const navigation = useNavigation();
   return (
     <Tab.Navigator>
       <Tab.Screen name="Reviews" component={ReviewList} />

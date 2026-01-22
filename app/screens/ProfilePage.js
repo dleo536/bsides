@@ -11,62 +11,114 @@ import {
   RefreshControl,
 } from "react-native";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { initializeApp } from "@firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { collection, addDoc } from "firebase/firestore";
-import "@firebase/auth";
+
 import { app } from "../config/firebase";
 import { auth } from "../config/firebase";
-import { getAuth, signOut } from "firebase/auth";
-
+import { getAuth, signOut, onAuthStateChanged } from "firebase/auth";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import { Ionicons } from "@expo/vector-icons";
+import { TouchableOpacity } from "react-native";
 import defaultProfileImage from "/Users/dannyleo/Workspace/b-sides/assets/defaultProfilePicture.png";
 import { getListByUID, postList } from "../api/ListAPI";
 import ListElement from "../components/listElement";
 import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
+import { createMaterialTopTabNavigator } from "@react-navigation/material-top-tabs";
 
-const ProfilePage = () => {
-  const db = getFirestore(app);
-  const profileImage = auth.currentUser.photoURL;
+const Tab = createMaterialTopTabNavigator();
+
+//const db = getFirestore(app);
+
+//get users lists
+
+//create new list
+
+//get users reviews
+
+const ProfileTab = () => {
+  const navigation = useNavigation();
+  const [user, setUser] = useState(null);
   const [listName, setListName] = useState("");
   const [listDescription, setListDescription] = useState("");
   const [lists, setLists] = useState([]);
   const [listModalVisible, setListModalVisible] = useState(false);
   const [refreshing, setRefreshing] = React.useState(false);
 
-  //get users lists
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setUser(user);
+      } else {
+        navigation.replace("Landing");
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const handleSignOut = () => {
-    const auth = getAuth();
     signOut(auth)
       .then(() => {
-        navigation.replace("Login");
+        navigation.replace("Landing");
       })
       .catch((error) => {
-        // An error happened.
+        console.error("Error signing out:", error);
       });
   };
-  const createNewList = async () => {
-    await postList(auth.currentUser.uid, listDescription, listName);
-    setListModalVisible(false);
-    setListName("");
-    setListDescription("");
-  };
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!user) return;
+
+      const parent = navigation.getParent();
+      parent?.setOptions({
+        headerTitle: user?.displayName,
+        headerRight: () => (
+          <TouchableOpacity
+            onPress={() => console.log("settings")}
+            style={{ marginRight: 10 }}
+          >
+            <Ionicons name="ellipsis-horizontal-outline" size={24} />
+          </TouchableOpacity>
+        ),
+      });
+    }, [navigation, user])
+  );
+
+  useEffect(() => {
+    if (user) {
+      fetchUserLists();
+    }
+  }, [user]);
+
   const onRefresh = React.useCallback(() => {
+    if (!user) return;
     setRefreshing(true);
     fetchUserLists().then(() => {
       setRefreshing(false);
     });
-  }, []);
+  }, [user]);
+
+  const createNewList = async () => {
+    if (!user) return;
+    await postList(user.uid, listDescription, listName);
+    setListModalVisible(false);
+    setListName("");
+    setListDescription("");
+  };
+
   const fetchUserLists = async () => {
-    const response = await getListByUID(auth.currentUser.uid);
+    if (!user) return;
+    const response = await getListByUID(user.uid);
     setLists(response);
   };
-  //create new list
-  useEffect(() => {
-    fetchUserLists();
-  }, []);
-  //get users reviews
+
+  if (!user) {
+    return null;
+  }
 
   return (
     <SafeAreaProvider>
@@ -83,7 +135,6 @@ const ProfilePage = () => {
               transparent={true}
               visible={listModalVisible}
               onRequestClose={() => {
-                Alert.alert("Modal has been closed.");
                 setListModalVisible(!listModalVisible);
               }}
             >
@@ -119,14 +170,11 @@ const ProfilePage = () => {
             </Modal>
             <View style={styles.profileBody}>
               <Image
-                source={{ uri: profileImage }}
+                source={{ uri: user.photoURL || defaultProfileImage }}
                 style={styles.image}
               ></Image>
 
-              <Text style={styles.welcome}>
-                {" "}
-                Welcome {auth.currentUser?.displayName}
-              </Text>
+              <Text style={styles.welcome}>Welcome {user.displayName}</Text>
               <Pressable
                 style={[styles.button, styles.buttonClose]}
                 onPress={() => setListModalVisible(true)}
@@ -140,7 +188,6 @@ const ProfilePage = () => {
                 <Text>Sign Out</Text>
               </Pressable>
 
-              {/* <Text>{reviews}</Text>  */}
               <View style={styles.lists}>
                 {lists && lists.length > 0 ? (
                   <FlatList
@@ -158,6 +205,82 @@ const ProfilePage = () => {
         </ScrollView>
       </SafeAreaView>
     </SafeAreaProvider>
+  );
+};
+const HistoryTab = () => {
+  const navigation = useNavigation();
+
+  return <View></View>;
+};
+const BacklogTab = () => {
+  const navigation = useNavigation();
+
+  return <View></View>;
+};
+const ListsTab = () => {
+  const navigation = useNavigation();
+  const [lists, setLists] = useState([]);
+  const [refreshing, setRefreshing] = React.useState(false);
+  const onRefresh = React.useCallback(() => {
+    setRefreshing(true);
+    fetchUserLists().then(() => {
+      setRefreshing(false);
+    });
+  }, []);
+  const fetchUserLists = async () => {
+    const response = await getListByUID(auth.currentUser.uid);
+    setLists(response);
+  };
+  useFocusEffect(
+    useCallback(() => {
+      const parent = navigation.getParent(); // Parent = ProfilePage Tab.Screen
+      parent?.setOptions({
+        headerRight: () => (
+          <TouchableOpacity
+            onPress={() => console.log("Lists settings")}
+            style={{ marginRight: 10 }}
+          >
+            <Ionicons name="add-outline" size={24} />
+          </TouchableOpacity>
+        ),
+        headerTitle: "My Lists", // Optional: also change title
+      });
+    }, [navigation])
+  );
+  return (
+    <SafeAreaProvider>
+      <SafeAreaView style={styles.container}>
+        <ScrollView
+          contentContainerStyle={styles.scrollView}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+        >
+          <View style={styles.lists}>
+            {lists && lists.length > 0 ? (
+              <FlatList
+                data={lists}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item }) => <ListElement list={item} />}
+                style={styles.listElement}
+              />
+            ) : (
+              <Text style={styles.noListsText}>No Lists Created Yet</Text>
+            )}
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    </SafeAreaProvider>
+  );
+};
+const ProfilePage = () => {
+  return (
+    <Tab.Navigator>
+      <Tab.Screen name="Profile" component={ProfileTab} />
+      <Tab.Screen name="Lists" component={ListsTab} />
+      <Tab.Screen name="History" component={HistoryTab} />
+      <Tab.Screen name="Backlog" component={BacklogTab} />
+    </Tab.Navigator>
   );
 };
 const styles = StyleSheet.create({

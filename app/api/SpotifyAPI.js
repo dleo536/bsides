@@ -170,10 +170,22 @@ const fetchTrackList = async (albumID, accessToken) => {
     },
   });
   const data = await response.json();
-  console.log("********data: ", JSON.stringify(data));
+  //console.log("********data: ", JSON.stringify(data));
 
   return data.items; // Returns track list
 };
+const fetchArtistByName = async (artistName, accessToken) => {
+  const url = `https://api.spotify.com/v1/search?q=${artistName}&type=artist`;
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+  const data = await response.json();
+  return data.artists.items[0];
+};
+
 export const getAlbumName = async (albumID) => {
   const token = await getAccessToken(); // Wait for access token
   const album = await fetchAlbum(albumID, token); // Wait for album data
@@ -221,6 +233,11 @@ export const getArtistsByName = async (artistName, page = 0, limit = 10) => {
       return artists.artists.items;
     });
   return artists;
+};
+export const getArtistByName = async (artistName) => {
+  const token = await getAccessToken();
+  const artist = await fetchArtistByName(artistName, token);
+  return artist;
 };
 export const getAlbumsByArtist = async (artistID) => {
   const token = await getAccessToken();

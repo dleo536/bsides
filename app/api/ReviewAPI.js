@@ -20,8 +20,9 @@ export const getAllReviews = async (limit = 5, offset = 0) => {
     );
     json = await response.json();
     //const reviewsArray = await jsonToReviews(json[0]);
+    const reviews = json.data;
 
-    const reviewArray = await Promise.all(json.map(jsonToReviews));
+    const reviewArray = await Promise.all(reviews.map(jsonToReviews));
     console.log("-------rreview array: ", json);
     //console.log("reviewArray " + reviewArray[0].albumID);
     return reviewArray;
@@ -29,6 +30,15 @@ export const getAllReviews = async (limit = 5, offset = 0) => {
     console.error(error);
     console.log("This be throwing an error!");
   }
+};
+export const getReviewsByUID = async (uid) => {
+  const response = await fetch(
+    `https://test1.bsidesdatapath.xyz/reviews?userID=${uid}`
+  );
+  const json = await response.json();
+  const reviews = json.data;
+  const reviewArray = await Promise.all(reviews.map(jsonToReviews));
+  return reviewArray;
 };
 export const postReview = async (rating, description, albumID) => {
   try {

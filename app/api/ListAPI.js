@@ -64,15 +64,16 @@ export const getListByUID = async (uid) => {
   };
   try {
     const response = await fetch(
-      "https://test1.bsidesdatapath.xyz/lists/" + uid,
+      "https://test1.bsidesdatapath.xyz/lists?userID=" + uid,
       fetchData
     );
     json = await response.json();
+    const lists = json.data;
 
-    if (json.length == 0) {
-      return json;
+    if (lists.length == 0) {
+      return lists;
     } else {
-      const listArray = await Promise.all(json.map(jsonToLists));
+      const listArray = await Promise.all(lists.map(jsonToLists));
       console.log("listArray " + listArray[0].listName);
       return listArray;
     }
@@ -126,6 +127,7 @@ export const postList = async (uid, description, name) => {
         userID: uid,
         listName: name,
         listDescription: description,
+        listType: "user",
         percentageListened: 0,
         albumList: [],
         likes: 0,
@@ -146,6 +148,40 @@ export const postList = async (uid, description, name) => {
     console.error("Fetch error:", error);
   }
 };
+export const postListWithType = async (uid, type) => {
+  try {
+    const response = await fetch("https://test1.bsidesdatapath.xyz/lists", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        userID: uid,
+        listName: "",
+        listDescription: "",
+        listType: type,
+        percentageListened: 0,
+        albumList: [],
+        likes: 0,
+        comments: null,
+        visible: true,
+      }),
+    });
+    const data = await response.json();
+
+    if (response.ok) {
+      console.log("Post with type Success:", data);
+      return data.insertedId;
+    } else {
+      console.error("Error:", data);
+      return response;
+    }
+  } catch (error) {
+    console.error("Fetch error:", error);
+  }
+};
+
 const jsonToLists = async (jsonResponse) => {
   let data =
     typeof jsonResponse === "string" ? JSON.parse(jsonResponse) : jsonResponse;

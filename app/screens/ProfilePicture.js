@@ -2,7 +2,7 @@ import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { initializeApp } from "@firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { collection, addDoc } from "firebase/firestore";
-import "@firebase/auth";
+// import "@firebase/auth";
 import { updateProfile } from "firebase/auth";
 import { app } from "../config/firebase";
 import { auth } from "../config/firebase";

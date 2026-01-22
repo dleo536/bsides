@@ -1,4 +1,4 @@
-import fetch from "node-fetch";
+//import fetch from "node-fetch";
 
 const HEADERS = {
   "User-Agent": "bsides/1.0 (dleo536@gmail.com)",
@@ -11,11 +11,18 @@ function sleep(ms) {
 
 // Search release group by album and artist
 async function searchReleaseGroup(album, artist) {
-  await sleep(1000);
-  const query = encodeURIComponent(`release:"${album}" AND artist:"${artist}"`);
-  const url = `${BASE_URL}/release-group/?query=${query}&fmt=json`;
-  const res = await fetch(url, { headers: HEADERS });
+  await new Promise((resolve) => setTimeout(resolve, 1000)); // simulate sleep
+  const query = encodeURIComponent(`release:${album} AND artist:${artist}`);
+  const url = `https://musicbrainz.org/ws/2/release-group/?query=${query}&fmt=json`;
+
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent": "BsidesApp/1.0.0 ( your@email.com )",
+    },
+  });
+
   const data = await res.json();
+  console.log("response", data);
   return data["release-groups"]?.[0];
 }
 
@@ -49,6 +56,7 @@ async function getRecordingCredits(recordingId) {
 
 // Filter for mixing/engineering credits
 function findMixingCredits(relations = []) {
+  console.log("-------------> relations " + JSON.stringify(relations));
   return relations.filter(
     (r) =>
       r.type?.toLowerCase().includes("mix") ||
@@ -79,6 +87,7 @@ export async function findMixingCreditsFromMusicBrainz(album, artist) {
 
       // 1. Check release-level credits
       const releaseCredits = findMixingCredits(releaseData.relations || []);
+
       if (releaseCredits.length > 0) {
         console.log(
           `\n🎛 Release-level mixing/engineering credits: "${release.title}"`
@@ -116,6 +125,7 @@ export async function findMixingCreditsFromMusicBrainz(album, artist) {
                 }`
               );
             });
+            console.log("is it returning early or whhhhhhattttttt?");
             return mixers;
           }
         }
@@ -174,6 +184,7 @@ function extractMixedReleases(relations) {
 
   return Array.from(mixedAlbums);
 }
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function getAlbumsMixedBy(engineerName) {
   try {
@@ -200,3 +211,80 @@ export async function getAlbumsMixedBy(engineerName) {
 }
 
 // Change this name to test others
+export async function getAlbumCreditsByName(album, artist) {
+  try {
+    console.log(`🔍 Searching for "${album}" by ${artist}...`);
+    const releaseGroup = await searchReleaseGroup(album, artist);
+    if (!releaseGroup) {
+      console.log(`❌ No release group found.`);
+      return [];
+    }
+
+    const releases = await getReleasesFromGroup(releaseGroup.id);
+    console.log(
+      `📦 Found ${releases.length} release(s) under "${releaseGroup.title}"`
+    );
+
+    const seenNames = new Set();
+    const uniquePersonnel = [];
+
+    for (const release of releases) {
+      console.log(
+        `🔎 Checking release: ${release.title} (${release.id || "no date"})`
+      );
+      const releaseData = await getFullReleaseData(release.id);
+
+      // 1. Release-level personnel
+      const releaseRels = releaseData.relations || [];
+      releaseRels.forEach((rel) => {
+        const name = rel.artist?.name;
+
+        if (name && !seenNames.has(name)) {
+          seenNames.add(name);
+          uniquePersonnel.push({
+            name,
+            role: rel.type,
+            source: "release",
+          });
+        }
+      });
+
+      // 2. Recording-level personnel
+      const allMedia = releaseData.media || [];
+      for (const medium of allMedia) {
+        const tracks = medium.tracks || [];
+        for (const track of tracks) {
+          const recordingId = track.recording?.id;
+          if (!recordingId) continue;
+
+          console.log(`🎵 Checking track: ${track.title} (${recordingId})`);
+          const recCredits = await getRecordingCredits(recordingId);
+
+          recCredits.forEach((rel) => {
+            const name = rel.artist?.name;
+
+            if (name && !seenNames.has(name)) {
+              seenNames.add(name);
+              uniquePersonnel.push({
+                name,
+                role: rel.type,
+                source: "recording",
+                track: track.title,
+              });
+            }
+          });
+        }
+      }
+
+      if (uniquePersonnel.length > 0) break; // remove if you want all releases checked
+    }
+
+    console.log(
+      `✅ Found ${uniquePersonnel[0].name} unique people (by name only).`
+    );
+    return uniquePersonnel;
+  } catch (err) {
+    console.error(`❌ Error: ${err.message}`);
+    return [];
+  }
+}
