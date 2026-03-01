@@ -1,5 +1,6 @@
 import { List } from "../logic/List";
 import { getUsernameByUID } from "./UserAPI";
+import API_BASE_URL from "../config/api";
 
 export const getAllLists = async (limit = 5, offset = 0) => {
   let json;
@@ -13,7 +14,7 @@ export const getAllLists = async (limit = 5, offset = 0) => {
   };
   try {
     const response = await fetch(
-      `https://test1.bsidesdatapath.xyz/lists?limit=${limit}&offset=${offset}`,
+      `${API_BASE_URL}/lists?limit=${limit}&offset=${offset}`,
       fetchData
     );
     json = await response.json();
@@ -39,7 +40,7 @@ export const getHasMore = async (limit = 5, offset = 0) => {
   };
   try {
     const response = await fetch(
-      `https://test1.bsidesdatapath.xyz/lists?limit=${limit}&offset=${offset}`,
+      `${API_BASE_URL}/lists?limit=${limit}&offset=${offset}`,
       fetchData
     );
     json = await response.json();
@@ -64,7 +65,7 @@ export const getListByUID = async (uid) => {
   };
   try {
     const response = await fetch(
-      "https://test1.bsidesdatapath.xyz/lists?userID=" + uid,
+      `${API_BASE_URL}/lists?userID=${uid}`,
       fetchData
     );
     json = await response.json();
@@ -90,7 +91,7 @@ export const patchAlbumList = async (list, id) => {
   //patch list with updated albumlist
   try {
     const response = await fetch(
-      "https://test1.bsidesdatapath.xyz/lists/" + id,
+      `${API_BASE_URL}/lists/${id}`,
       {
         method: "PATCH",
         headers: {
@@ -117,7 +118,7 @@ export const patchAlbumList = async (list, id) => {
 };
 export const postList = async (uid, description, name) => {
   try {
-    const response = await fetch("https://test1.bsidesdatapath.xyz/lists", {
+    const response = await fetch(`${API_BASE_URL}/lists`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -150,7 +151,7 @@ export const postList = async (uid, description, name) => {
 };
 export const postListWithType = async (uid, type) => {
   try {
-    const response = await fetch("https://test1.bsidesdatapath.xyz/lists", {
+    const response = await fetch(`${API_BASE_URL}/lists`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -182,24 +183,37 @@ export const postListWithType = async (uid, type) => {
   }
 };
 
+/**
+ * Convert backend API response to List instance
+ * Maps backend AlbumList entity to frontend List class
+ * Handles both new backend format and legacy format for backward compatibility
+ */
 const jsonToLists = async (jsonResponse) => {
   let data =
     typeof jsonResponse === "string" ? JSON.parse(jsonResponse) : jsonResponse;
-  let list = new List();
-  list.id = jsonResponse._id;
-  list.uid = jsonResponse.userID;
-  list.listName = jsonResponse.listName;
-  list.listDescription = jsonResponse.listDescription;
-  list.percentageListened = jsonResponse.percentageListened;
-  list.albumList = jsonResponse.albumList;
-  list.likes = list.likes;
-  list.comments = list.comments;
-  list.visible = list.visible;
-  // list.username = await getUsernameByUID(jsonResponse.userID).then(
-  //   (response) => {
-  //     return response;
-  //   }
-  // );
-  console.log("list ID:", list.listName);
+  
+  // Check if this is the new backend format (has ownerId, title, etc.)
+  if (data.ownerId || data.title) {
+    // New backend format - use fromBackendResponse
+    return List.fromBackendResponse(data);
+  }
+  
+  // Legacy format - map old fields to new structure
+  const list = new List({
+    id: data._id || data.id,
+    ownerId: data.userID || data.uid,
+    title: data.listName || data.title || '',
+    description: data.listDescription || data.description,
+    visibility: data.visible === false ? 'private' : (data.visibility || 'public'),
+    listType: data.listType || 'custom',
+    likesCount: data.likes || data.likesCount || 0,
+    commentsCount: data.comments || data.commentsCount || 0,
+    createdAt: data.date || data.createdAt,
+    // Legacy fields
+    albumList: data.albumList || [],
+    percentageListened: data.percentageListened || 0,
+  });
+  
+  console.log("list ID:", list.id, "Title:", list.title);
   return list;
 };

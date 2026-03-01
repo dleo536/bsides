@@ -46,6 +46,8 @@ const ArtistPage = (route) => {
   const [artistAlbums, setArtistAlbums] = useState([]);
   const [bio, setBio] = useState("");
   const [artistCoverPhoto, setArtistCoverPhoto] = useState();
+  const [isBioExpanded, setIsBioExpanded] = useState(false);
+  const BIO_MAX_LENGTH = 150; // Character limit before showing "See More"
   let newPhoto;
 
   useEffect(() => {
@@ -108,27 +110,47 @@ const ArtistPage = (route) => {
             </View>
           </View>
           <View style={styles.bioContainer}>
-            <Text style={{ padding: 5 }}>{bio}</Text>
+            <Text style={{ padding: 5 }}>
+              {bio && bio.length > BIO_MAX_LENGTH && !isBioExpanded
+                ? `${bio.substring(0, BIO_MAX_LENGTH)}... `
+                : bio}
+              {bio && bio.length > BIO_MAX_LENGTH && (
+                <Text
+                  style={styles.seeMoreText}
+                  onPress={() => setIsBioExpanded(!isBioExpanded)}
+                >
+                  {isBioExpanded ? "See Less" : "See More"}
+                </Text>
+              )}
+            </Text>
           </View>
           <View style={styles.albumsContainer}>
             <View style={styles.imageListContainer}>
               {artistAlbums.map((album, index) => (
-                <TouchableOpacity
-                  key={index}
-                  onPress={() =>
-                    navigation.push("AlbumPage", {
-                      album: album,
-                      key: Math.round(Math.random() * 10000000),
-                    })
-                  }
-                >
-                  <Image
-                    source={{ uri: album.images[0].url }}
-                    style={styles.albumImage}
-                  />
-                </TouchableOpacity>
+                <View key={index} style={styles.albumItem}>
+                  <TouchableOpacity
+                    onPress={() =>
+                      navigation.push("AlbumPage", {
+                        album: album,
+                        key: Math.round(Math.random() * 10000000),
+                      })
+                    }
+                  >
+                    <Image
+                      source={{ uri: album.images[0].url }}
+                      style={styles.albumImage}
+                    />
+                  </TouchableOpacity>
+                  <Text style={styles.albumTitle} numberOfLines={2}>
+                    {album.name}
+                  </Text>
+                </View>
               ))}
             </View>
+          </View>
+          <View style={styles.footer}>
+            
+            <Text style={styles.footerBrand}>bsides</Text>
           </View>
         </View>
       </ScrollView>
@@ -148,11 +170,31 @@ const styles = StyleSheet.create({
     height: 100,
     borderRadius: 3,
   },
+  albumItem: {
+    width: 100,
+    marginBottom: 12,
+    alignItems: "center",
+  },
   albumImage: {
     width: 100,
     height: 100,
-    borderRadius: 1,
-    padding: 2,
+    borderRadius: 2,
+    marginBottom: 2,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  albumTitle: {
+    fontSize: 12,
+    color: "#333",
+    textAlign: "center",
+    paddingHorizontal: 4,
+    lineHeight: 16,
   },
   gradient: {
     padding: 0,
@@ -234,13 +276,19 @@ const styles = StyleSheet.create({
   },
   albumsContainer: {
     flex: 1,
-    padding: 10,
+    paddingVertical: 0,
+    paddingHorizontal: 0,
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   imageListContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
-    padding: 10,
+    justifyContent: "center",
+    alignItems: "flex-start",
+    width: "100%",
+    gap: 4,
   },
   bioContainer: {
     padding: 10,
@@ -248,6 +296,30 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     contentWrap: "wrap",
+  },
+  seeMoreText: {
+    color: "#007AFF",
+    fontWeight: "600",
+  },
+  footer: {
+    paddingVertical: 30,
+    paddingHorizontal: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    borderTopWidth: 1,
+    borderTopColor: "#E5E5E5",
+    marginTop: 20,
+  },
+  footerText: {
+    fontSize: 12,
+    color: "#999",
+    marginBottom: 4,
+  },
+  footerBrand: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#333",
+    letterSpacing: 1,
   },
 });
 

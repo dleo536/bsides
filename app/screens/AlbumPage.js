@@ -26,7 +26,8 @@ import { auth } from "../config/firebase";
 import { LinearGradient } from "expo-linear-gradient";
 import { postReview } from "../api/ReviewAPI";
 import { Review } from "../logic/Review";
-import { getListByUID, patchAlbumList } from "../api/ListAPI";
+import { getListByUID, patchAlbumList, postList } from "../api/ListAPI";
+import API_BASE_URL from "../config/api";
 import { List } from "../logic/List";
 import { findMixingCreditsFromMusicBrainz } from "../api/MusicBrainz";
 import { getTrackListFromSpotify } from "../api/SpotifyAPI";
@@ -35,6 +36,7 @@ import { createMaterialTopTabNavigator } from "@react-navigation/material-top-ta
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { ScrollView } from "react-native";
 import { getAlbumCreditsByName } from "../api/MusicBrainz";
+import { searchReleaseGroup } from "../api/MusicBrainz";
 import { TabView, SceneMap } from "react-native-tab-view";
 import { TabBar } from "react-native-tab-view";
 
@@ -211,6 +213,7 @@ const AlbumPage = (route) => {
 
   const [artistPhoto, setArtistPhoto] = useState();
   const [loading, setLoading] = useState(true);
+  const [actionModalVisible, setActionModalVisible] = useState(false);
   const [reviewModalVisible, setReviewModalVisible] = useState(false);
   const [listModalVisible, setListModalVisible] = useState(false);
   const [rating, setRating] = useState(false);
@@ -221,6 +224,9 @@ const AlbumPage = (route) => {
   const [trackList, setTrackList] = useState([]);
   const [activeTab, setActiveTab] = useState("personnel");
   const [index, setIndex] = useState(0);
+  const [showCreateList, setShowCreateList] = useState(false);
+  const [newListName, setNewListName] = useState("");
+  const [newListDescription, setNewListDescription] = useState("");
 
   let newPhoto;
   const navigation = useNavigation();
@@ -249,7 +255,7 @@ const AlbumPage = (route) => {
       headerTitle: albumData.name, // top header text
       headerRight: () => (
         <TouchableOpacity
-          onPress={() => onAddToListPress()}
+          onPress={() => setActionModalVisible(true)}
           style={{ marginRight: 10 }}
         >
           <Ionicons name="ellipsis-horizontal-outline" size={24} />
@@ -277,7 +283,10 @@ const AlbumPage = (route) => {
     //call ListAPI and return all lists with UID == currentUID
     let lists = await getListByUID(auth.currentUser.uid);
     setListReturned(lists);
-
+    setShowCreateList(lists && lists.length === 0);
+    setSelectedIds([]);
+    setNewListName("");
+    setNewListDescription("");
     //if null return createListOption
     setListModalVisible(true);
     //else return selectable lists
@@ -295,10 +304,72 @@ const AlbumPage = (route) => {
     //send to reviewAPI
 
     try {
-      await postReview(rating, description, albumData.id);
-      setModalVisible(!modalVisible);
+      // Get current user ID
+      const userId = auth.currentUser?.uid;
+      if (!userId) {
+        alert("You must be logged in to submit a review");
+        return;
+      }
+
+      // Convert rating to ratingHalfSteps (0.5-5.0 stars -> 1-10 half-steps)
+      let ratingHalfSteps = null;
+      if (rating) {
+        const ratingNum = parseFloat(rating);
+        if (!isNaN(ratingNum) && ratingNum >= 0.5 && ratingNum <= 5.0) {
+          ratingHalfSteps = Math.round(ratingNum * 2);
+        }
+      }
+
+      // Get album and artist names for snapshots
+      const albumTitle = albumData.name || '';
+      const artistName = albumData.artists?.[0]?.name || '';
+      
+      if (!albumTitle || !artistName) {
+        alert("Missing album information. Please try again.");
+        return;
+      }
+
+      // Try to fetch MusicBrainz release group ID
+      let releaseGroupMbId = null;
+      try {
+        const releaseGroup = await searchReleaseGroup(albumTitle, artistName);
+        if (releaseGroup && releaseGroup.id) {
+          releaseGroupMbId = releaseGroup.id;
+        }
+      } catch (mbError) {
+        console.log("Could not fetch MusicBrainz ID:", mbError);
+        // Continue without it - backend may need to handle this
+      }
+
+      // If we couldn't get MusicBrainz ID, use a placeholder
+      // Note: Backend requires releaseGroupMbId, so this might fail validation
+      // Consider making it optional in backend or always fetching it
+      if (!releaseGroupMbId) {
+        releaseGroupMbId = 'temp-' + albumData.id.substring(0, 31); // Use Spotify ID as fallback (max 36 chars)
+      }
+
+      // Create Review object with proper structure matching backend DTO
+      const review = new Review({
+        userId: userId,
+        spotifyAlbumId: albumData.id, // Store Spotify ID for reference
+        releaseGroupMbId: releaseGroupMbId,
+        albumTitleSnapshot: albumTitle,
+        artistNameSnapshot: artistName,
+        coverUrlSnapshot: albumData.images?.[0]?.url || null,
+        ratingHalfSteps: ratingHalfSteps,
+        body: description || null,
+        isDraft: false,
+        visibility: 'public',
+      });
+
+      await postReview(userId, review);
+      console.log("----------->>>>>>>>>> 999939393 ---->> review submitted: ", review);
+      setReviewModalVisible(false);
+      setRating("");
+      setDescription("");
     } catch (error) {
       console.log("Error submitting review:", error);
+      alert("Failed to submit review. Please try again.");
     }
   };
   const getTrackList = async () => {
@@ -322,6 +393,70 @@ const AlbumPage = (route) => {
     });
     //call a ListAPI method that pushes albumId to list
     setListModalVisible(false);
+    setSelectedIds([]);
+  };
+
+  const createNewListAndAdd = async () => {
+    if (!newListName.trim()) {
+      alert("Please enter a list name");
+      return;
+    }
+
+    try {
+      // Create the new list directly using fetch to get the response data
+      const response = await fetch(`${API_BASE_URL}/lists`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          userID: auth.currentUser.uid,
+          listName: newListName,
+          listDescription: newListDescription,
+          listType: "user",
+          percentageListened: 0,
+          albumList: [],
+          likes: 0,
+          comments: null,
+          visible: true,
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        // Get the list ID from the response
+        const newListId = data.insertedId || data.id || data._id;
+        
+        if (newListId) {
+          // Add album to the newly created list
+          await patchAlbumList([albumData.id], newListId);
+          
+          // Refresh the lists to show the new one
+          let lists = await getListByUID(auth.currentUser.uid);
+          setListReturned(lists);
+          setShowCreateList(false);
+          setNewListName("");
+          setNewListDescription("");
+          setListModalVisible(false);
+          setSelectedIds([]);
+        } else {
+          // If we couldn't get the ID but response was ok, try refreshing lists
+          let lists = await getListByUID(auth.currentUser.uid);
+          setListReturned(lists);
+          setShowCreateList(false);
+          setNewListName("");
+          setNewListDescription("");
+          setListModalVisible(false);
+        }
+      } else {
+        alert("Failed to create list. Please try again.");
+      }
+    } catch (error) {
+      console.error("Error creating list:", error);
+      alert("Error creating list. Please try again.");
+    }
   };
 
   return (
@@ -443,69 +578,262 @@ const AlbumPage = (route) => {
               )}
             </View>
 
+            {/* Action Modal - Choose Review or Add to List */}
+            <Modal
+              visible={actionModalVisible}
+              transparent
+              animationType="slide"
+              onRequestClose={() => setActionModalVisible(false)}
+            >
+              <View style={styles.centeredView}>
+                <View style={styles.actionModalView}>
+                  <View style={styles.modalHeader}>
+                    <Text style={styles.modalTitle}>What would you like to do?</Text>
+                    <TouchableOpacity
+                      onPress={() => setActionModalVisible(false)}
+                      style={styles.closeButton}
+                    >
+                      <Ionicons name="close" size={24} color="#333" />
+                    </TouchableOpacity>
+                  </View>
+                  
+                  <View style={styles.actionModalContent}>
+                    <TouchableOpacity
+                      style={styles.actionButton}
+                      onPress={() => {
+                        setActionModalVisible(false);
+                        setReviewModalVisible(true);
+                      }}
+                    >
+                      <Ionicons name="star-outline" size={28} color="#007AFF" />
+                      <Text style={styles.actionButtonText}>Review this album</Text>
+                      <Ionicons name="chevron-forward" size={20} color="#999" />
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity
+                      style={styles.actionButton}
+                      onPress={async () => {
+                        setActionModalVisible(false);
+                        await onAddToListPress();
+                      }}
+                    >
+                      <Ionicons name="list-outline" size={28} color="#007AFF" />
+                      <Text style={styles.actionButtonText}>Add to list</Text>
+                      <Ionicons name="chevron-forward" size={20} color="#999" />
+                    </TouchableOpacity>
+                  </View>
+                  
+                  <View style={styles.modalFooter}>
+                    <Pressable
+                      style={[styles.modalButton, styles.buttonSecondary]}
+                      onPress={() => setActionModalVisible(false)}
+                    >
+                      <Text style={styles.buttonSecondaryText}>Cancel</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+            </Modal>
+
             {/* Review Modal */}
             <Modal
               visible={reviewModalVisible}
               transparent
               animationType="slide"
+              onRequestClose={() => setReviewModalVisible(false)}
             >
               <View style={styles.centeredView}>
                 <View style={styles.modalView}>
-                  <TextInput
-                    placeholder="Rating"
-                    value={rating}
-                    onChangeText={setRating}
-                    style={styles.input}
-                  />
-                  <TextInput
-                    placeholder="Tell more!"
-                    value={description}
-                    onChangeText={setDescription}
-                    style={styles.input}
-                  />
-                  <Pressable
-                    style={[styles.button, styles.buttonClose]}
-                    onPress={() => submitReview(rating, description)}
-                  >
-                    <Text>Submit Review</Text>
-                  </Pressable>
+                  <View style={styles.modalHeader}>
+                    <Text style={styles.modalTitle}>Write a Review</Text>
+                    <TouchableOpacity
+                      onPress={() => setReviewModalVisible(false)}
+                      style={styles.closeButton}
+                    >
+                      <Ionicons name="close" size={24} color="#333" />
+                    </TouchableOpacity>
+                  </View>
+                  
+                  <View style={styles.modalContent}>
+                    <Text style={styles.inputLabel}>Rating (0.5 - 5.0)</Text>
+                    <TextInput
+                      placeholder="e.g., 4.5"
+                      value={rating}
+                      onChangeText={setRating}
+                      keyboardType="decimal-pad"
+                      style={styles.modalInput}
+                    />
+                    
+                    <Text style={styles.inputLabel}>Review</Text>
+                    <TextInput
+                      placeholder="Share your thoughts about this album..."
+                      value={description}
+                      onChangeText={setDescription}
+                      multiline
+                      numberOfLines={6}
+                      textAlignVertical="top"
+                      style={[styles.modalInput, styles.textArea]}
+                    />
+                  </View>
+                  
+                  <View style={styles.modalFooter}>
+                    <Pressable
+                      style={[styles.modalButton, styles.buttonSecondary]}
+                      onPress={() => setReviewModalVisible(false)}
+                    >
+                      <Text style={styles.buttonSecondaryText}>Cancel</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.modalButton, styles.buttonPrimary]}
+                      onPress={() => submitReview(rating, description)}
+                    >
+                      <Text style={styles.buttonPrimaryText}>Submit Review</Text>
+                    </Pressable>
+                  </View>
                 </View>
               </View>
             </Modal>
 
             {/* List Modal */}
-            <Modal visible={listModalVisible} transparent animationType="slide">
+            <Modal 
+              visible={listModalVisible} 
+              transparent 
+              animationType="slide"
+              onRequestClose={() => setListModalVisible(false)}
+            >
               <View style={styles.centeredView}>
                 <View style={styles.modalView}>
-                  <FlatList
-                    data={listReturned}
-                    keyExtractor={(item) => item.id}
-                    renderItem={({ item }) => (
-                      <TouchableOpacity
-                        style={[
-                          styles.item,
-                          selectedIds.includes(item.id) && styles.selectedItem,
-                        ]}
-                        onPress={() => {
-                          if (selectedIds.includes(item.id)) {
-                            setSelectedIds(
-                              selectedIds.filter((id) => id !== item.id)
-                            );
-                          } else {
-                            setSelectedIds([...selectedIds, item.id]);
-                          }
-                        }}
-                      >
-                        <Text>{item.listName}</Text>
-                      </TouchableOpacity>
+                  <View style={styles.modalHeader}>
+                    <Text style={styles.modalTitle}>Add to List</Text>
+                    <TouchableOpacity
+                      onPress={() => setListModalVisible(false)}
+                      style={styles.closeButton}
+                    >
+                      <Ionicons name="close" size={24} color="#333" />
+                    </TouchableOpacity>
+                  </View>
+                  
+                  <View style={styles.listContainer}>
+                    {showCreateList || (listReturned && listReturned.length === 0) ? (
+                      <View style={styles.createListContainer}>
+                        <Text style={styles.createListTitle}>Create New List</Text>
+                        <Text style={styles.createListSubtitle}>
+                          Create a new list and add this album to it
+                        </Text>
+                        
+                        <Text style={styles.inputLabel}>List Name *</Text>
+                        <TextInput
+                          placeholder="e.g., My Favorite Albums"
+                          value={newListName}
+                          onChangeText={setNewListName}
+                          style={styles.modalInput}
+                          autoFocus
+                        />
+                        
+                        <Text style={styles.inputLabel}>Description (Optional)</Text>
+                        <TextInput
+                          placeholder="Add a description for your list..."
+                          value={newListDescription}
+                          onChangeText={setNewListDescription}
+                          multiline
+                          numberOfLines={3}
+                          textAlignVertical="top"
+                          style={[styles.modalInput, styles.textArea]}
+                        />
+                      </View>
+                    ) : listReturned && listReturned.length > 0 ? (
+                      <>
+                        <TouchableOpacity
+                          style={styles.createNewListButton}
+                          onPress={() => setShowCreateList(true)}
+                        >
+                          <Ionicons name="add-circle-outline" size={20} color="#007AFF" />
+                          <Text style={styles.createNewListButtonText}>Create New List</Text>
+                        </TouchableOpacity>
+                        <FlatList
+                          data={listReturned}
+                          keyExtractor={(item) => item.id}
+                          renderItem={({ item }) => (
+                            <TouchableOpacity
+                              style={[
+                                styles.listItem,
+                                selectedIds.includes(item.id) && styles.selectedListItem,
+                              ]}
+                              onPress={() => {
+                                if (selectedIds.includes(item.id)) {
+                                  setSelectedIds(
+                                    selectedIds.filter((id) => id !== item.id)
+                                  );
+                                } else {
+                                  setSelectedIds([...selectedIds, item.id]);
+                                }
+                              }}
+                            >
+                              <Text style={styles.listItemText}>{item.listName}</Text>
+                              {selectedIds.includes(item.id) && (
+                                <Ionicons name="checkmark-circle" size={24} color="#007AFF" />
+                              )}
+                            </TouchableOpacity>
+                          )}
+                          style={styles.listFlatList}
+                        />
+                      </>
+                    ) : (
+                      <View style={styles.emptyListContainer}>
+                        <Text style={styles.emptyListText}>No lists available</Text>
+                        <Text style={styles.emptyListSubtext}>Create a list first to add albums</Text>
+                      </View>
                     )}
-                  />
-                  <Pressable
-                    style={[styles.button, styles.buttonClose]}
-                    onPress={submitLists}
-                  >
-                    <Text>Submit Lists</Text>
-                  </Pressable>
+                  </View>
+                  
+                  <View style={styles.modalFooter}>
+                    <Pressable
+                      style={[styles.modalButton, styles.buttonSecondary]}
+                      onPress={() => {
+                        setListModalVisible(false);
+                        setShowCreateList(false);
+                        setNewListName("");
+                        setNewListDescription("");
+                      }}
+                    >
+                      <Text style={styles.buttonSecondaryText}>Cancel</Text>
+                    </Pressable>
+                    {showCreateList || (listReturned && listReturned.length === 0) ? (
+                      <Pressable
+                        style={[
+                          styles.modalButton, 
+                          styles.buttonPrimary,
+                          !newListName.trim() && styles.buttonDisabled
+                        ]}
+                        onPress={createNewListAndAdd}
+                        disabled={!newListName.trim()}
+                      >
+                        <Text style={[
+                          styles.buttonPrimaryText,
+                          !newListName.trim() && styles.buttonDisabledText
+                        ]}>
+                          Create & Add
+                        </Text>
+                      </Pressable>
+                    ) : (
+                      <Pressable
+                        style={[
+                          styles.modalButton, 
+                          styles.buttonPrimary,
+                          selectedIds.length === 0 && styles.buttonDisabled
+                        ]}
+                        onPress={submitLists}
+                        disabled={selectedIds.length === 0}
+                      >
+                        <Text style={[
+                          styles.buttonPrimaryText,
+                          selectedIds.length === 0 && styles.buttonDisabledText
+                        ]}>
+                          Add to {selectedIds.length > 0 ? `${selectedIds.length} ` : ''}List{selectedIds.length !== 1 ? 's' : ''}
+                        </Text>
+                      </Pressable>
+                    )}
+                  </View>
                 </View>
               </View>
             </Modal>
@@ -522,13 +850,245 @@ const styles = StyleSheet.create({
   gradient: { position: "absolute", zIndex: 1 },
   pageData: { flexDirection: "row", paddingTop: "50%", zIndex: 2 },
   columnContainer: { paddingHorizontal: 20, paddingVertical: 20 },
-  centeredView: { flex: 1, justifyContent: "center", alignItems: "center" },
-  modalView: {
-    margin: 20,
-    backgroundColor: "white",
-    padding: 40,
-    borderRadius: 20,
+  centeredView: { 
+    flex: 1, 
+    justifyContent: "center", 
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
   },
+  modalView: {
+    backgroundColor: "white",
+    borderRadius: 16,
+    width: "90%",
+    maxWidth: 500,
+    maxHeight: "80%",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E5E5",
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#333",
+  },
+  closeButton: {
+    padding: 4,
+  },
+  modalContent: {
+    padding: 20,
+    maxHeight: 400,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 8,
+    marginTop: 12,
+  },
+  modalInput: {
+    backgroundColor: "#F5F5F5",
+    borderWidth: 1,
+    borderColor: "#E0E0E0",
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    marginBottom: 8,
+  },
+  textArea: {
+    height: 120,
+    paddingTop: 12,
+  },
+  modalFooter: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 12,
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: "#E5E5E5",
+  },
+  modalButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    minWidth: 100,
+    alignItems: "center",
+  },
+  buttonPrimary: {
+    backgroundColor: "#007AFF",
+  },
+  buttonSecondary: {
+    backgroundColor: "#F5F5F5",
+  },
+  buttonDisabled: {
+    backgroundColor: "#E0E0E0",
+  },
+  buttonPrimaryText: {
+    color: "white",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  buttonSecondaryText: {
+    color: "#333",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  buttonDisabledText: {
+    color: "#999",
+  },
+  listContainer: {
+    maxHeight: 300,
+    minHeight: 200,
+  },
+  listFlatList: {
+    flexGrow: 0,
+  },
+  listItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E5E5",
+    backgroundColor: "white",
+  },
+  selectedListItem: {
+    backgroundColor: "#F0F8FF",
+  },
+  listItemText: {
+    fontSize: 16,
+    color: "#333",
+    flex: 1,
+  },
+  emptyListContainer: {
+    padding: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyListText: {
+    fontSize: 16,
+    color: "#666",
+    marginBottom: 8,
+  },
+  emptyListSubtext: {
+    fontSize: 14,
+    color: "#999",
+  },
+  actionModalView: {
+    backgroundColor: "white",
+    borderRadius: 16,
+    width: "85%",
+    maxWidth: 400,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  actionModalContent: {
+    padding: 20,
+  },
+  actionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    marginBottom: 12,
+    backgroundColor: "#F8F8F8",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E0E0E0",
+  },
+  actionButtonText: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#333",
+    marginLeft: 12,
+  },
+  actionModalView: {
+    backgroundColor: "white",
+    borderRadius: 16,
+    width: "85%",
+    maxWidth: 400,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  actionModalContent: {
+    padding: 20,
+  },
+  actionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    marginBottom: 12,
+    backgroundColor: "#F8F8F8",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E0E0E0",
+  },
+  actionButtonText: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#333",
+    marginLeft: 12,
+  },
+  createListContainer: {
+    padding: 20,
+  },
+  createListTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#333",
+    marginBottom: 8,
+  },
+  createListSubtitle: {
+    fontSize: 14,
+    color: "#666",
+    marginBottom: 20,
+  },
+  createNewListButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+    marginHorizontal: 20,
+    marginTop: 10,
+    marginBottom: 10,
+    backgroundColor: "#F0F8FF",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#007AFF",
+    borderStyle: "dashed",
+  },
+  createNewListButtonText: {
+    color: "#007AFF",
+    fontSize: 16,
+    fontWeight: "600",
+    marginLeft: 8,
+  },
+  // Legacy styles for backward compatibility
   input: { backgroundColor: "white", padding: 10, marginTop: 20, width: 300 },
   button: { padding: 10, alignItems: "center", marginTop: 10 },
   buttonClose: { backgroundColor: "purple" },

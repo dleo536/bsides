@@ -1,5 +1,6 @@
 import { ref, getDownloadURL } from "firebase/storage";
 import { storage } from "../config/firebase"; // your config
+import API_BASE_URL from "../config/api";
 
 export const getProfileImage = async (uid) => {
   const imageRef = ref(storage, `profileImages/${uid}.jpg`);
@@ -24,7 +25,7 @@ export const getUsernameByUID = async (userID) => {
   };
   try {
     const response = await fetch(
-      `https://test1.bsidesdatapath.xyz/users/${userID}`
+      `${API_BASE_URL}/users/${userID}`
     );
     json = await response.json();
     console.log("Log from USER API:", json.username);
@@ -48,7 +49,7 @@ export const getUsersByUsername = async (username) => {
   };
   try {
     const response = await fetch(
-      `https://test1.bsidesdatapath.xyz/users?username=${username}`
+      `${API_BASE_URL}/users?username=${username}`
     );
     json = await response.json();
     console.log("Log from USER API:", json);
@@ -70,7 +71,7 @@ export const patchUser = async (uid, backlogListId, favoriteListId) => {
   );
   try {
     const response = await fetch(
-      "https://test1.bsidesdatapath.xyz/users/" + uid,
+      `${API_BASE_URL}/users/${uid}`,
       {
         method: "PATCH",
         headers: {
@@ -100,7 +101,7 @@ export const followUser = async (currentUid, userUid) => {
   console.log("Following user:", userUid);
   try {
     const response = await fetch(
-      `https://test1.bsidesdatapath.xyz/users/${currentUid}/follow/${userUid}`,
+      `${API_BASE_URL}/users/${currentUid}/follow/${userUid}`,
       {
         method: "POST",
         headers: {

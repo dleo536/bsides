@@ -1,0 +1,9 @@
+Welcome to the b.sides app
+
+To run the front end run
+
+npm start
+
+Select I for deploying iOS simulator
+
+Make sure that backend is running before starting frontend or errors with be thrown

@@ -1,4 +1,4 @@
-
+import API_BASE_URL from "../config/api";
 
 class User {
     // constructor(username, displayName, biography, accountType, favorites, profilePicture, followers, following) {
@@ -23,7 +23,7 @@ class User {
       }
       try {
         const response = await fetch(
-          'https://test1.bsidesdatapath.xyz/users/' + userID, fetchData
+          `${API_BASE_URL}/users/${userID}`, fetchData
         );
         json = await response.json();
         console.log("Niceeee!!!!!!!")

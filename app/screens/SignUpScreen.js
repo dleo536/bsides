@@ -23,6 +23,7 @@ import ProfilePage from "./ProfilePage";
 //import App from '../../App';
 import { postListWithType } from "../api/ListAPI";
 import { patchUser } from "../api/UserAPI";
+import API_BASE_URL from "../config/api";
 
 export default function SignUpScreen() {
   const [email, setEmail] = useState("");
@@ -132,7 +133,7 @@ export default function SignUpScreen() {
     };
     try {
       const response = await fetch(
-        "https://test1.bsidesdatapath.xyz/users",
+        `${API_BASE_URL}/users`,
         fetchData
       );
       const json = await response.json();

@@ -10,7 +10,7 @@ function sleep(ms) {
 }
 
 // Search release group by album and artist
-async function searchReleaseGroup(album, artist) {
+export async function searchReleaseGroup(album, artist) {
   await new Promise((resolve) => setTimeout(resolve, 1000)); // simulate sleep
   const query = encodeURIComponent(`release:${album} AND artist:${artist}`);
   const url = `https://musicbrainz.org/ws/2/release-group/?query=${query}&fmt=json`;
