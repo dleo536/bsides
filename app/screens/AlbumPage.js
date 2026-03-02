@@ -227,6 +227,7 @@ const AlbumPage = (route) => {
   const [showCreateList, setShowCreateList] = useState(false);
   const [newListName, setNewListName] = useState("");
   const [newListDescription, setNewListDescription] = useState("");
+  const [createListModalVisible, setCreateListModalVisible] = useState(false);
 
   let newPhoto;
   const navigation = useNavigation();
@@ -350,7 +351,7 @@ const AlbumPage = (route) => {
 
       // Create Review object with proper structure matching backend DTO
       const review = new Review({
-        userId: userId,
+        userId: userId, 
         spotifyAlbumId: albumData.id, // Store Spotify ID for reference
         releaseGroupMbId: releaseGroupMbId,
         albumTitleSnapshot: albumTitle,
@@ -403,24 +404,32 @@ const AlbumPage = (route) => {
     }
 
     try {
-      // Create the new list directly using fetch to get the response data
+      // Create a List instance following the backend entity structure
+      const newList = new List({
+        ownerId: auth.currentUser.uid,
+        title: newListName,
+        description: newListDescription || null,
+        listType: "custom",
+        visibility: "public",
+      });
+
+      // Get the DTO for creating the list
+      const createDto = newList.toCreateDto();
+      
+      // Include listType if backend requires it (since toCreateDto doesn't include it)
+      const requestBody = {
+        ...createDto,
+        listType: newList.listType,
+      };
+
+      // Create the new list using the List object structure
       const response = await fetch(`${API_BASE_URL}/lists`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
         },
-        body: JSON.stringify({
-          userID: auth.currentUser.uid,
-          listName: newListName,
-          listDescription: newListDescription,
-          listType: "user",
-          percentageListened: 0,
-          albumList: [],
-          likes: 0,
-          comments: null,
-          visible: true,
-        }),
+        body: JSON.stringify(requestBody),
       });
       
       const data = await response.json();
@@ -440,6 +449,7 @@ const AlbumPage = (route) => {
           setNewListName("");
           setNewListDescription("");
           setListModalVisible(false);
+          setCreateListModalVisible(false);
           setSelectedIds([]);
         } else {
           // If we couldn't get the ID but response was ok, try refreshing lists
@@ -449,6 +459,7 @@ const AlbumPage = (route) => {
           setNewListName("");
           setNewListDescription("");
           setListModalVisible(false);
+          setCreateListModalVisible(false);
         }
       } else {
         alert("Failed to create list. Please try again.");
@@ -781,7 +792,16 @@ const AlbumPage = (route) => {
                     ) : (
                       <View style={styles.emptyListContainer}>
                         <Text style={styles.emptyListText}>No lists available</Text>
-                        <Text style={styles.emptyListSubtext}>Create a list first to add albums</Text>
+                        <TouchableOpacity
+                          style={styles.createListButton}
+                          onPress={() => {
+                            setListModalVisible(false);
+                            setCreateListModalVisible(true);
+                          }}
+                        >
+                          <Ionicons name="add-circle-outline" size={20} color="#007AFF" />
+                          <Text style={styles.createListButtonText}>Create a new list</Text>
+                        </TouchableOpacity>
                       </View>
                     )}
                   </View>
@@ -833,6 +853,83 @@ const AlbumPage = (route) => {
                         </Text>
                       </Pressable>
                     )}
+                  </View>
+                </View>
+              </View>
+            </Modal>
+
+            {/* Create List Modal */}
+            <Modal
+              visible={createListModalVisible}
+              transparent
+              animationType="slide"
+              onRequestClose={() => setCreateListModalVisible(false)}
+            >
+              <View style={styles.centeredView}>
+                <View style={styles.modalView}>
+                  <View style={styles.modalHeader}>
+                    <Text style={styles.modalTitle}>Create New List</Text>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setCreateListModalVisible(false);
+                        setNewListName("");
+                        setNewListDescription("");
+                      }}
+                      style={styles.closeButton}
+                    >
+                      <Ionicons name="close" size={24} color="#333" />
+                    </TouchableOpacity>
+                  </View>
+                  
+                  <View style={styles.modalContent}>
+                    <Text style={styles.inputLabel}>List Name *</Text>
+                    <TextInput
+                      placeholder="e.g., My Favorite Albums"
+                      value={newListName}
+                      onChangeText={setNewListName}
+                      style={styles.modalInput}
+                      autoFocus
+                    />
+                    
+                    <Text style={styles.inputLabel}>Description (Optional)</Text>
+                    <TextInput
+                      placeholder="Add a description for your list..."
+                      value={newListDescription}
+                      onChangeText={setNewListDescription}
+                      multiline
+                      numberOfLines={3}
+                      textAlignVertical="top"
+                      style={[styles.modalInput, styles.textArea]}
+                    />
+                  </View>
+                  
+                  <View style={styles.modalFooter}>
+                    <Pressable
+                      style={[styles.modalButton, styles.buttonSecondary]}
+                      onPress={() => {
+                        setCreateListModalVisible(false);
+                        setNewListName("");
+                        setNewListDescription("");
+                      }}
+                    >
+                      <Text style={styles.buttonSecondaryText}>Cancel</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[
+                        styles.modalButton, 
+                        styles.buttonPrimary,
+                        !newListName.trim() && styles.buttonDisabled
+                      ]}
+                      onPress={createNewListAndAdd}
+                      disabled={!newListName.trim()}
+                    >
+                      <Text style={[
+                        styles.buttonPrimaryText,
+                        !newListName.trim() && styles.buttonDisabledText
+                      ]}>
+                        Create
+                      </Text>
+                    </Pressable>
                   </View>
                 </View>
               </View>
@@ -985,6 +1082,24 @@ const styles = StyleSheet.create({
   emptyListSubtext: {
     fontSize: 14,
     color: "#999",
+  },
+  createListButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+    marginTop: 16,
+    backgroundColor: "#F0F8FF",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#007AFF",
+    borderStyle: "dashed",
+  },
+  createListButtonText: {
+    color: "#007AFF",
+    fontSize: 16,
+    fontWeight: "600",
+    marginLeft: 8,
   },
   actionModalView: {
     backgroundColor: "white",
