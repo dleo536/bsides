@@ -10,8 +10,8 @@ import React, { useEffect, useState } from "react";
 import { useNavigation } from "@react-navigation/native";
 import { auth, db } from "../config/firebase";
 
-import DefaultImage from "/Users/dannyleo/Workspace/b-sides/assets/ChatGPT Image Apr 2, 2025, 09_32_29 PM.png";
-import bsideImage from "/Users/dannyleo/Workspace/b-sides/assets/Color logo - no background.png";
+import DefaultImage from "../../assets/ChatGPT Image Apr 2, 2025, 09_32_29 PM.png";
+import bsideImage from "../../assets/Color logo - no background.png";
 
 export default function LandingPage() {
   useEffect(() => {

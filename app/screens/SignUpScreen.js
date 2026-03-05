@@ -120,8 +120,11 @@ export default function SignUpScreen() {
       body: JSON.stringify({
         name: "Temp",
         uid: localUser.uid,
+        oauthId: localUser.uid,
         email: localUser.email,
         username: username,
+        firstName: username,
+        lastName: "user",
         "profile-picture": null,
         backlogListId: "",
         favoriteListId: "",

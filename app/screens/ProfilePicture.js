@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Image } from "react-native";
 import { initializeApp } from "@firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { collection, addDoc } from "firebase/firestore";
@@ -11,11 +11,13 @@ import React, { useEffect, useState } from "react";
 import * as ImagePicker from "expo-image-picker";
 import { useNavigation } from "@react-navigation/native";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import defaultProfileImage from "../../assets/defaultProfilePicture.png";
 
 const ProfilePicturePage = () => {
   const navigation = useNavigation();
   const [image, setImage] = useState(null);
   const storage = getStorage();
+  const defaultProfileImageUri = Image.resolveAssetSource(defaultProfileImage).uri;
   //const auth = getAuth();
 
   const pickImage = async () => {
@@ -74,8 +76,7 @@ const ProfilePicturePage = () => {
   const handleSkip = async () => {
     // submit default profilePicture to firebase and then redirect to Welcome
     updateProfile(auth.currentUser, {
-      photoURL:
-        "/Users/dannyleo/Workspace/b-sides/assets/defaultProfilePicture.png",
+      photoURL: defaultProfileImageUri,
     })
       .then(() => {
         const unsubscribe = auth.onAuthStateChanged((user) => {

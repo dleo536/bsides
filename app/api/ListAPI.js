@@ -1,6 +1,35 @@
 import { List } from "../logic/List";
-import { getUsernameByUID } from "./UserAPI";
+import { getUsernameByUID, getFullUserByUid } from "./UserAPI";
 import API_BASE_URL from "../config/api";
+
+const parseJsonSafely = async (response, label) => {
+  const raw = await response.text();
+  if (!raw || !raw.trim()) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    console.warn(
+      `${label} returned non-JSON payload`,
+      response.status,
+      raw.slice(0, 160)
+    );
+    return null;
+  }
+};
+
+/** Generate URL-safe slug from title */
+const generateSlug = (title) => {
+  if (!title) return "";
+  return title
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, "")
+    .replace(/[\s_-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+};
 
 export const getAllLists = async (limit = 5, offset = 0) => {
   let json;
@@ -54,8 +83,6 @@ export const getHasMore = async (limit = 5, offset = 0) => {
   }
 };
 export const getListByUID = async (uid) => {
-  let json;
-  // let reviewArray;
   fetchData = {
     method: "GET",
     headers: {
@@ -64,17 +91,61 @@ export const getListByUID = async (uid) => {
     },
   };
   try {
-    const response = await fetch(
-      `${API_BASE_URL}/lists?userID=${uid}`,
-      fetchData
-    );
-    json = await response.json();
-    const lists = json.data;
+    const fullUser = await getFullUserByUid(uid);
+    const candidateIds = [uid];
+    if (fullUser?.id && !candidateIds.includes(fullUser.id)) {
+      candidateIds.push(fullUser.id);
+    }
+    if (fullUser?.oauthId && !candidateIds.includes(fullUser.oauthId)) {
+      candidateIds.push(fullUser.oauthId);
+    }
 
-    if (lists.length == 0) {
-      return lists;
+    let failedRequests = 0;
+    const listBuckets = await Promise.all(
+      candidateIds.map(async (candidateId) => {
+        const requestUrl = `${API_BASE_URL}/lists?userID=${encodeURIComponent(
+          candidateId
+        )}`;
+        const response = await fetch(
+          requestUrl,
+          fetchData
+        );
+        if (!response.ok) {
+          failedRequests += 1;
+          const errorBody = await response.text();
+          console.error("[getListByUID] list fetch failed", {
+            requestUrl,
+            status: response.status,
+            body: errorBody?.slice?.(0, 400) || errorBody || "",
+          });
+          return [];
+        }
+        const json = await parseJsonSafely(response, "GET /lists");
+        if (!json) {
+          failedRequests += 1;
+          console.error("[getListByUID] empty/non-JSON list response", {
+            requestUrl,
+            status: response.status,
+          });
+          return [];
+        }
+        return json?.data || [];
+      })
+    );
+
+    const mergedLists = listBuckets.flat();
+    const dedupedLists = Array.from(
+      new Map(mergedLists.map((list) => [list.id, list])).values()
+    );
+
+    if (failedRequests === candidateIds.length && dedupedLists.length === 0) {
+      throw new Error("Unable to fetch lists from backend");
+    }
+
+    if (dedupedLists.length === 0) {
+      return dedupedLists;
     } else {
-      const listArray = await Promise.all(lists.map(jsonToLists));
+      const listArray = await Promise.all(dedupedLists.map(jsonToLists));
       console.log("listArray " + listArray[0].listName);
       return listArray;
     }
@@ -100,6 +171,7 @@ export const patchAlbumList = async (list, id) => {
         },
         body: JSON.stringify({
           albumList: list,
+          albumIds: list,
         }),
       }
     );
@@ -107,73 +179,115 @@ export const patchAlbumList = async (list, id) => {
 
     if (response.ok) {
       console.log("Success:", data);
-      return response;
+      return data;
     } else {
       console.error("Error:", data);
-      return response;
+      return data;
     }
   } catch (error) {
     console.error("Fetch error:", error);
   }
 };
+/**
+ * Create a new list. Matches AlbumList entity:
+ * - ownerId (UUID from backend user)
+ * - firebaseUid (Firebase UID for reference)
+ * - title, slug, listType, visibility, description
+ */
 export const postList = async (uid, description, name) => {
   try {
+    const user = await getFullUserByUid(uid);
+    const ownerId = user?.id ?? uid;
+
+    const slug = generateSlug(name) || "untitled-list";
+
+    const body = {
+      ownerId,
+      firebaseUid: uid,
+      title: name || "Untitled List",
+      slug,
+      listType: "custom",
+      visibility: "public",
+      description: description || null,
+    };
+
     const response = await fetch(`${API_BASE_URL}/lists`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
       },
-      body: JSON.stringify({
-        userID: uid,
-        listName: name,
-        listDescription: description,
-        listType: "user",
-        percentageListened: 0,
-        albumList: [],
-        likes: 0,
-        comments: null,
-        visible: true,
-      }),
+      body: JSON.stringify(body),
     });
     const data = await response.json();
 
     if (response.ok) {
       console.log("Success:", data);
-      return response;
+      return data;
     } else {
       console.error("Error:", data);
-      return response;
+      return data;
     }
   } catch (error) {
     console.error("Fetch error:", error);
   }
 };
+/**
+ * Create a list with a specific type (e.g. "backlog", "favorite").
+ * Maps to AlbumList entity listType enum: custom, favorites, top_n, year, theme.
+ */
 export const postListWithType = async (uid, type) => {
   try {
+    const user = await getFullUserByUid(uid);
+    const ownerId = user?.id ?? uid;
+
+    const listTypeMap = {
+      backlog: "custom",
+      favorite: "favorites",
+      favorites: "favorites",
+      top_n: "top_n",
+      year: "year",
+      theme: "theme",
+    };
+    const listType = listTypeMap[type?.toLowerCase()] || "custom";
+
+    const slug =
+      type === "backlog"
+        ? "backlog"
+        : type === "favorite" || type === "favorites"
+        ? "favorites"
+        : `list-${Date.now()}`;
+
+    const titleMap = {
+      backlog: "Backlog",
+      favorite: "Favorites",
+      favorites: "Favorites",
+    };
+    const title = titleMap[type?.toLowerCase()] || "Untitled List";
+
+    const body = {
+      ownerId,
+      firebaseUid: uid,
+      title,
+      slug,
+      listType,
+      visibility: "public",
+      description: null,
+    };
+
     const response = await fetch(`${API_BASE_URL}/lists`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
       },
-      body: JSON.stringify({
-        userID: uid,
-        listName: "",
-        listDescription: "",
-        listType: type,
-        percentageListened: 0,
-        albumList: [],
-        likes: 0,
-        comments: null,
-        visible: true,
-      }),
+      body: JSON.stringify(body),
     });
     const data = await response.json();
 
     if (response.ok) {
       console.log("Post with type Success:", data);
-      return data.insertedId;
+      return data.id ?? data.insertedId;
     } else {
       console.error("Error:", data);
       return response;
@@ -199,20 +313,20 @@ const jsonToLists = async (jsonResponse) => {
   }
   
   // Legacy format - map old fields to new structure
-  const list = new List({
-    id: data._id || data.id,
-    ownerId: data.userID || data.uid,
-    title: data.listName || data.title || '',
-    description: data.listDescription || data.description,
+    const list = new List({
+      id: data._id || data.id,
+      ownerId: data.userID || data.uid,
+      title: data.listName || data.title || '',
+      description: data.listDescription || data.description,
     visibility: data.visible === false ? 'private' : (data.visibility || 'public'),
     listType: data.listType || 'custom',
     likesCount: data.likes || data.likesCount || 0,
-    commentsCount: data.comments || data.commentsCount || 0,
-    createdAt: data.date || data.createdAt,
-    // Legacy fields
-    albumList: data.albumList || [],
-    percentageListened: data.percentageListened || 0,
-  });
+      commentsCount: data.comments || data.commentsCount || 0,
+      createdAt: data.date || data.createdAt,
+      // Legacy fields
+      albumIds: data.albumIds || data.albumList || [],
+      percentageListened: data.percentageListened || 0,
+    });
   
   console.log("list ID:", list.id, "Title:", list.title);
   return list;

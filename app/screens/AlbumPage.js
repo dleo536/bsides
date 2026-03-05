@@ -27,8 +27,6 @@ import { LinearGradient } from "expo-linear-gradient";
 import { postReview } from "../api/ReviewAPI";
 import { Review } from "../logic/Review";
 import { getListByUID, patchAlbumList, postList } from "../api/ListAPI";
-import API_BASE_URL from "../config/api";
-import { List } from "../logic/List";
 import { findMixingCreditsFromMusicBrainz } from "../api/MusicBrainz";
 import { getTrackListFromSpotify } from "../api/SpotifyAPI";
 import { getArtistBio } from "../api/MusicBrainz";
@@ -228,6 +226,8 @@ const AlbumPage = (route) => {
   const [newListName, setNewListName] = useState("");
   const [newListDescription, setNewListDescription] = useState("");
   const [createListModalVisible, setCreateListModalVisible] = useState(false);
+  const [listsLoading, setListsLoading] = useState(false);
+  const [listsError, setListsError] = useState("");
 
   let newPhoto;
   const navigation = useNavigation();
@@ -281,16 +281,41 @@ const AlbumPage = (route) => {
     });
   };
   const onAddToListPress = async () => {
-    //call ListAPI and return all lists with UID == currentUID
-    let lists = await getListByUID(auth.currentUser.uid);
-    setListReturned(lists);
-    setShowCreateList(lists && lists.length === 0);
+    setListsError("");
+    setListsLoading(true);
+    setListReturned([]);
+    setShowCreateList(false);
     setSelectedIds([]);
     setNewListName("");
     setNewListDescription("");
-    //if null return createListOption
     setListModalVisible(true);
-    //else return selectable lists
+
+    const currentUid = auth.currentUser?.uid;
+    if (!currentUid) {
+      setListsError("You must be signed in to load your lists.");
+      setListsLoading(false);
+      return;
+    }
+
+    try {
+      const lists = await getListByUID(currentUid);
+      if (!Array.isArray(lists)) {
+        console.error("[AlbumPage] getListByUID returned non-array", lists);
+        setListsError("Could not load your lists. Please try again.");
+        setListReturned([]);
+        setShowCreateList(false);
+      } else {
+        setListReturned(lists);
+        setShowCreateList(lists.length === 0);
+      }
+    } catch (error) {
+      console.error("[AlbumPage] failed to load lists for modal", error);
+      setListsError("Could not load your lists. Please try again.");
+      setListReturned([]);
+      setShowCreateList(false);
+    } finally {
+      setListsLoading(false);
+    }
   };
   const handleItemPress = (listSelected) => {
     setSelectedIds((prevIds) =>
@@ -404,66 +429,28 @@ const AlbumPage = (route) => {
     }
 
     try {
-      // Create a List instance following the backend entity structure
-      const newList = new List({
-        ownerId: auth.currentUser.uid,
-        title: newListName,
-        description: newListDescription || null,
-        listType: "custom",
-        visibility: "public",
-      });
+      const createdList = await postList(
+        auth.currentUser.uid,
+        newListDescription || null,
+        newListName
+      );
+      const newListId = createdList?.insertedId || createdList?.id || createdList?._id;
 
-      // Get the DTO for creating the list
-      const createDto = newList.toCreateDto();
-      
-      // Include listType if backend requires it (since toCreateDto doesn't include it)
-      const requestBody = {
-        ...createDto,
-        listType: newList.listType,
-      };
-
-      // Create the new list using the List object structure
-      const response = await fetch(`${API_BASE_URL}/lists`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify(requestBody),
-      });
-      
-      const data = await response.json();
-      
-      if (response.ok) {
-        // Get the list ID from the response
-        const newListId = data.insertedId || data.id || data._id;
-        
-        if (newListId) {
-          // Add album to the newly created list
-          await patchAlbumList([albumData.id], newListId);
-          
-          // Refresh the lists to show the new one
-          let lists = await getListByUID(auth.currentUser.uid);
-          setListReturned(lists);
-          setShowCreateList(false);
-          setNewListName("");
-          setNewListDescription("");
-          setListModalVisible(false);
-          setCreateListModalVisible(false);
-          setSelectedIds([]);
-        } else {
-          // If we couldn't get the ID but response was ok, try refreshing lists
-          let lists = await getListByUID(auth.currentUser.uid);
-          setListReturned(lists);
-          setShowCreateList(false);
-          setNewListName("");
-          setNewListDescription("");
-          setListModalVisible(false);
-          setCreateListModalVisible(false);
-        }
-      } else {
+      if (!newListId) {
         alert("Failed to create list. Please try again.");
+        return;
       }
+
+      await patchAlbumList([albumData.id], newListId);
+
+      const lists = await getListByUID(auth.currentUser.uid);
+      setListReturned(lists);
+      setShowCreateList(false);
+      setNewListName("");
+      setNewListDescription("");
+      setListModalVisible(false);
+      setCreateListModalVisible(false);
+      setSelectedIds([]);
     } catch (error) {
       console.error("Error creating list:", error);
       alert("Error creating list. Please try again.");
@@ -725,7 +712,33 @@ const AlbumPage = (route) => {
                   </View>
                   
                   <View style={styles.listContainer}>
-                    {showCreateList || (listReturned && listReturned.length === 0) ? (
+                    {listsLoading ? (
+                      <View style={styles.loadingState}>
+                        <ActivityIndicator size="small" color="#007AFF" />
+                        <Text style={styles.loadingText}>Loading your lists...</Text>
+                      </View>
+                    ) : listsError ? (
+                      <View style={styles.errorState}>
+                        <Text style={styles.errorText}>{listsError}</Text>
+                        <View style={styles.errorActions}>
+                          <Pressable
+                            style={[styles.modalButton, styles.buttonSecondary]}
+                            onPress={onAddToListPress}
+                          >
+                            <Text style={styles.buttonSecondaryText}>Retry</Text>
+                          </Pressable>
+                          <Pressable
+                            style={[styles.modalButton, styles.buttonPrimary]}
+                            onPress={() => {
+                              setListsError("");
+                              setShowCreateList(true);
+                            }}
+                          >
+                            <Text style={styles.buttonPrimaryText}>Create List</Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    ) : showCreateList || (listReturned && listReturned.length === 0) ? (
                       <View style={styles.createListContainer}>
                         <Text style={styles.createListTitle}>Create New List</Text>
                         <Text style={styles.createListSubtitle}>
@@ -818,40 +831,42 @@ const AlbumPage = (route) => {
                     >
                       <Text style={styles.buttonSecondaryText}>Cancel</Text>
                     </Pressable>
-                    {showCreateList || (listReturned && listReturned.length === 0) ? (
-                      <Pressable
-                        style={[
-                          styles.modalButton, 
-                          styles.buttonPrimary,
-                          !newListName.trim() && styles.buttonDisabled
-                        ]}
-                        onPress={createNewListAndAdd}
-                        disabled={!newListName.trim()}
-                      >
-                        <Text style={[
-                          styles.buttonPrimaryText,
-                          !newListName.trim() && styles.buttonDisabledText
-                        ]}>
-                          Create & Add
-                        </Text>
-                      </Pressable>
-                    ) : (
-                      <Pressable
-                        style={[
-                          styles.modalButton, 
-                          styles.buttonPrimary,
-                          selectedIds.length === 0 && styles.buttonDisabled
-                        ]}
-                        onPress={submitLists}
-                        disabled={selectedIds.length === 0}
-                      >
-                        <Text style={[
-                          styles.buttonPrimaryText,
-                          selectedIds.length === 0 && styles.buttonDisabledText
-                        ]}>
-                          Add to {selectedIds.length > 0 ? `${selectedIds.length} ` : ''}List{selectedIds.length !== 1 ? 's' : ''}
-                        </Text>
-                      </Pressable>
+                    {!listsLoading && !listsError && (
+                      showCreateList || (listReturned && listReturned.length === 0) ? (
+                        <Pressable
+                          style={[
+                            styles.modalButton, 
+                            styles.buttonPrimary,
+                            !newListName.trim() && styles.buttonDisabled
+                          ]}
+                          onPress={createNewListAndAdd}
+                          disabled={!newListName.trim()}
+                        >
+                          <Text style={[
+                            styles.buttonPrimaryText,
+                            !newListName.trim() && styles.buttonDisabledText
+                          ]}>
+                            Create & Add
+                          </Text>
+                        </Pressable>
+                      ) : (
+                        <Pressable
+                          style={[
+                            styles.modalButton, 
+                            styles.buttonPrimary,
+                            selectedIds.length === 0 && styles.buttonDisabled
+                          ]}
+                          onPress={submitLists}
+                          disabled={selectedIds.length === 0}
+                        >
+                          <Text style={[
+                            styles.buttonPrimaryText,
+                            selectedIds.length === 0 && styles.buttonDisabledText
+                          ]}>
+                            Add to {selectedIds.length > 0 ? `${selectedIds.length} ` : ''}List{selectedIds.length !== 1 ? 's' : ''}
+                          </Text>
+                        </Pressable>
+                      )
                     )}
                   </View>
                 </View>
@@ -1048,6 +1063,32 @@ const styles = StyleSheet.create({
   listContainer: {
     maxHeight: 300,
     minHeight: 200,
+  },
+  loadingState: {
+    paddingVertical: 32,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 14,
+    color: "#666",
+  },
+  errorState: {
+    padding: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+  },
+  errorText: {
+    fontSize: 14,
+    color: "#B00020",
+    textAlign: "center",
+  },
+  errorActions: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 8,
   },
   listFlatList: {
     flexGrow: 0,

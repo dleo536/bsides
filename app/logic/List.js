@@ -94,10 +94,18 @@ export class List {
       configurable: true
     });
     
-    // Note: albumList and percentageListened are not in the backend entity
-    // They may be stored separately or calculated
-    // Keeping them for backward compatibility but they're not part of the core entity
-    this.albumList = data.albumList || [];
+    // Stored list album IDs (Spotify IDs)
+    this.albumIds = data.albumIds || data.albumList || [];
+
+    // Legacy alias used throughout the app UI
+    Object.defineProperty(this, 'albumList', {
+      get: () => this.albumIds,
+      set: (value) => { this.albumIds = Array.isArray(value) ? value : []; },
+      enumerable: true,
+      configurable: true
+    });
+
+    // Legacy compatibility field (not persisted by backend)
     this.percentageListened = data.percentageListened || 0;
   }
   
@@ -126,7 +134,7 @@ export class List {
       updatedAt: data.updatedAt,
       deletedAt: data.deletedAt,
       // Legacy fields if present
-      albumList: data.albumList || [],
+      albumIds: data.albumIds || data.albumList || [],
       percentageListened: data.percentageListened || 0,
     });
   }
@@ -152,6 +160,7 @@ export class List {
       title: this.title,
       description: this.description,
       visibility: this.visibility,
+      albumIds: this.albumIds,
     };
   }
   

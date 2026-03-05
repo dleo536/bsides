@@ -22,7 +22,7 @@ import { getAuth, signOut, onAuthStateChanged } from "firebase/auth";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { TouchableOpacity } from "react-native";
-import defaultProfileImage from "/Users/dannyleo/Workspace/b-sides/assets/defaultProfilePicture.png";
+import defaultProfileImage from "../../assets/defaultProfilePicture.png";
 import { getListByUID, postList } from "../api/ListAPI";
 import ListElement from "../components/listElement";
 import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
@@ -41,10 +41,7 @@ const Tab = createMaterialTopTabNavigator();
 const ProfileTab = () => {
   const navigation = useNavigation();
   const [user, setUser] = useState(null);
-  const [listName, setListName] = useState("");
-  const [listDescription, setListDescription] = useState("");
   const [lists, setLists] = useState([]);
-  const [listModalVisible, setListModalVisible] = useState(false);
   const [refreshing, setRefreshing] = React.useState(false);
 
   useEffect(() => {
@@ -102,14 +99,6 @@ const ProfileTab = () => {
     });
   }, [user]);
 
-  const createNewList = async () => {
-    if (!user) return;
-    await postList(user.uid, listDescription, listName);
-    setListModalVisible(false);
-    setListName("");
-    setListDescription("");
-  };
-
   const fetchUserLists = async () => {
     if (!user) return;
     const response = await getListByUID(user.uid);
@@ -130,57 +119,13 @@ const ProfileTab = () => {
           }
         >
           <View style={styles.container}>
-            <Modal
-              animationType="slide"
-              transparent={true}
-              visible={listModalVisible}
-              onRequestClose={() => {
-                setListModalVisible(!listModalVisible);
-              }}
-            >
-              <View style={styles.centeredView}>
-                <View style={styles.modalView}>
-                  <Text style={styles.modalText}>Create a List!</Text>
-                  <TextInput
-                    placeholder="List Name"
-                    value={listName}
-                    onChangeText={(text) => setListName(text)}
-                    style={styles.input}
-                  ></TextInput>
-                  <TextInput
-                    placeholder="List Description"
-                    value={listDescription}
-                    onChangeText={(text) => setListDescription(text)}
-                    style={styles.input}
-                  ></TextInput>
-                  <Pressable
-                    style={[styles.button, styles.buttonClose]}
-                    onPress={() => createNewList(listName, listDescription)}
-                  >
-                    <Text style={styles.textStyle}>Create List</Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.button, styles.buttonClose]}
-                    onPress={() => setListModalVisible(false)}
-                  >
-                    <Text style={styles.textStyle}>Cancel</Text>
-                  </Pressable>
-                </View>
-              </View>
-            </Modal>
             <View style={styles.profileBody}>
               <Image
-                source={{ uri: user.photoURL || defaultProfileImage }}
+                source={user.photoURL ? { uri: user.photoURL } : defaultProfileImage}
                 style={styles.image}
               ></Image>
 
               <Text style={styles.welcome}>Welcome {user.displayName}</Text>
-              <Pressable
-                style={[styles.button, styles.buttonClose]}
-                onPress={() => setListModalVisible(true)}
-              >
-                <Text>Create List</Text>
-              </Pressable>
               <Pressable
                 style={[styles.button, styles.buttonClose]}
                 onPress={() => handleSignOut()}
@@ -220,36 +165,99 @@ const BacklogTab = () => {
 const ListsTab = () => {
   const navigation = useNavigation();
   const [lists, setLists] = useState([]);
+  const [listModalVisible, setListModalVisible] = useState(false);
+  const [listName, setListName] = useState("");
+  const [listDescription, setListDescription] = useState("");
   const [refreshing, setRefreshing] = React.useState(false);
+
+  const fetchUserLists = async () => {
+    if (!auth.currentUser) return;
+    const response = await getListByUID(auth.currentUser.uid);
+    setLists(response);
+  };
+
+  useEffect(() => {
+    if (auth.currentUser) {
+      fetchUserLists();
+    }
+  }, [auth.currentUser?.uid]);
+
   const onRefresh = React.useCallback(() => {
     setRefreshing(true);
     fetchUserLists().then(() => {
       setRefreshing(false);
     });
   }, []);
-  const fetchUserLists = async () => {
-    const response = await getListByUID(auth.currentUser.uid);
-    setLists(response);
+
+  const createNewList = async () => {
+    if (!auth.currentUser) return;
+    await postList(auth.currentUser.uid, listDescription, listName);
+    setListModalVisible(false);
+    setListName("");
+    setListDescription("");
+    fetchUserLists();
   };
+
   useFocusEffect(
     useCallback(() => {
-      const parent = navigation.getParent(); // Parent = ProfilePage Tab.Screen
+      const parent = navigation.getParent();
       parent?.setOptions({
         headerRight: () => (
           <TouchableOpacity
-            onPress={() => console.log("Lists settings")}
+            onPress={() => setListModalVisible(true)}
             style={{ marginRight: 10 }}
           >
             <Ionicons name="add-outline" size={24} />
           </TouchableOpacity>
         ),
-        headerTitle: "My Lists", // Optional: also change title
+        headerTitle: "My Lists",
       });
     }, [navigation])
   );
+
   return (
     <SafeAreaProvider>
       <SafeAreaView style={styles.container}>
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={listModalVisible}
+          onRequestClose={() => setListModalVisible(false)}
+        >
+          <View style={styles.centeredView}>
+            <View style={styles.modalView}>
+              <Text style={styles.modalText}>Create a List!</Text>
+              <TextInput
+                placeholder="List Name"
+                value={listName}
+                onChangeText={(text) => setListName(text)}
+                style={styles.input}
+              />
+              <TextInput
+                placeholder="List Description"
+                value={listDescription}
+                onChangeText={(text) => setListDescription(text)}
+                style={styles.input}
+              />
+              <Pressable
+                style={[styles.button, styles.buttonClose]}
+                onPress={createNewList}
+              >
+                <Text style={styles.textStyle}>Create List</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.button, styles.buttonClose]}
+                onPress={() => {
+                  setListModalVisible(false);
+                  setListName("");
+                  setListDescription("");
+                }}
+              >
+                <Text style={styles.textStyle}>Cancel</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
         <ScrollView
           contentContainerStyle={styles.scrollView}
           refreshControl={
@@ -316,6 +324,14 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+  },
+  modalText: {
+    marginBottom: 15,
+    fontSize: 18,
+    fontWeight: "600",
+  },
+  textStyle: {
+    color: "black",
   },
   input: {
     backgroundColor: "white",

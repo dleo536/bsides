@@ -14,7 +14,7 @@ npm install --save-dev react-native-dotenv
 
 ### 1. Create a `.env` file
 
-Create a `.env` file in the root directory of your project (`/Users/dannyleo/Workspace/b-sides/.env`) with the following content:
+Create a `.env` file in the root directory of your project (`/Users/dannyleo/Workspace/b/b-sides/.env`) with the following content:
 
 **For Production (default):**
 ```env
@@ -79,7 +79,6 @@ let API_BASE_URL = 'http://localhost:3000'; // Change this line
 - The `.env` file should be added to `.gitignore` to avoid committing sensitive information
 - Different team members can have different `.env` files for their local setups
 - The babel configuration has been updated to support `react-native-dotenv`
-
 
 
 

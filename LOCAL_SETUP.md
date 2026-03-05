@@ -4,7 +4,7 @@
 
 ### Step 1: Create `.env` file
 
-Create a `.env` file in the root directory (`/Users/dannyleo/Workspace/b-sides/.env`) with:
+Create a `.env` file in the root directory (`/Users/dannyleo/Workspace/b/b-sides/.env`) with:
 
 ```env
 REACT_NATIVE_API_URL=http://localhost:3000
@@ -33,7 +33,7 @@ If you're testing on a physical device, you'll need to use your computer's IP ad
 In a separate terminal, start your backend server:
 
 ```bash
-cd /Users/dannyleo/Workspace/bsides-backend/b-backend
+cd /Users/dannyleo/Workspace/b/bsides-backend/b-backend
 npm run start:dev
 ```
 
@@ -46,7 +46,7 @@ The backend should be running on `http://localhost:3000`
 1. Stop the current Expo server (press `Ctrl+C` in the terminal)
 2. Clear the cache and restart:
    ```bash
-   cd /Users/dannyleo/Workspace/b-sides
+   cd /Users/dannyleo/Workspace/b/b-sides
    npm start -- --clear
    ```
 
@@ -107,7 +107,6 @@ To switch back to the production API:
 - The `.env` file should be in `.gitignore` (don't commit it to git)
 - Different developers can have different `.env` files for their local setups
 - The default fallback (if `.env` is missing) is the production URL: `https://test1.bsidesdatapath.xyz`
-
 
 
 
