@@ -1,12 +1,28 @@
 import { Review } from "../logic/Review";
 import { getAlbumName, getAlbumCover, getAlbum } from "./SpotifyAPI";
-import { getUsernameByUID } from "./UserAPI";
+import { getUsernameByUID, resolveBackendUserId } from "./UserAPI";
 import API_BASE_URL from "../config/api";
 
-export const getAllReviews = async (limit = 5, offset = 0) => {
-  let json;
+const parseJsonSafely = async (response, label) => {
+  const raw = await response.text();
+  if (!raw || !raw.trim()) {
+    return null;
+  }
 
-  fetchData = {
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    console.warn(
+      `${label} returned non-JSON payload`,
+      response.status,
+      raw.slice(0, 160)
+    );
+    return null;
+  }
+};
+
+export const getAllReviews = async (limit = 5, offset = 0, viewerUid = null) => {
+  const fetchData = {
     method: "GET",
     headers: {
       Accept: "application/json",
@@ -14,11 +30,32 @@ export const getAllReviews = async (limit = 5, offset = 0) => {
     },
   };
   try {
-    const response = await fetch(
-      `${API_BASE_URL}/reviews?limit=${limit}&offset=${offset}`,
-      fetchData
-    );
-    json = await response.json();
+    const searchParams = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+    });
+    if (viewerUid) {
+      const viewerId = await resolveBackendUserId(viewerUid);
+      if (viewerId) {
+        searchParams.append("viewerId", viewerId);
+      } else {
+        searchParams.append("viewerUid", viewerUid);
+      }
+    }
+
+    const requestUrl = `${API_BASE_URL}/reviews?${searchParams.toString()}`;
+    const response = await fetch(requestUrl, fetchData);
+    const json = await parseJsonSafely(response, "GET /reviews");
+
+    if (!response.ok || !json) {
+      console.error("[getAllReviews] request failed", {
+        requestUrl,
+        status: response.status,
+        body: json,
+      });
+      return [];
+    }
+
     const reviews = json.data || json; // Handle both array and object responses
 
     const reviewArray = await Promise.all(reviews.map(jsonToReviews));
@@ -31,7 +68,7 @@ export const getAllReviews = async (limit = 5, offset = 0) => {
 };
 export const getReviewsByUID = async (uid) => {
   const response = await fetch(
-    `${API_BASE_URL}/reviews?userId=${uid}`
+    `${API_BASE_URL}/reviews?userID=${uid}`
   );
   const json = await response.json();
   const reviews = json.data || json; // Handle both array and object responses

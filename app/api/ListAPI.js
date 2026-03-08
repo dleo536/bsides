@@ -1,5 +1,9 @@
 import { List } from "../logic/List";
-import { getUsernameByUID, getFullUserByUid } from "./UserAPI";
+import {
+  getUsernameByUID,
+  getFullUserByUid,
+  resolveBackendUserId,
+} from "./UserAPI";
 import API_BASE_URL from "../config/api";
 
 const parseJsonSafely = async (response, label) => {
@@ -31,10 +35,8 @@ const generateSlug = (title) => {
     .replace(/^-+|-+$/g, "");
 };
 
-export const getAllLists = async (limit = 5, offset = 0) => {
-  let json;
-  // let reviewArray;
-  fetchData = {
+export const getAllLists = async (limit = 5, offset = 0, viewerUid = null) => {
+  const fetchData = {
     method: "GET",
     headers: {
       Accept: "application/json",
@@ -42,12 +44,33 @@ export const getAllLists = async (limit = 5, offset = 0) => {
     },
   };
   try {
-    const response = await fetch(
-      `${API_BASE_URL}/lists?limit=${limit}&offset=${offset}`,
-      fetchData
-    );
-    json = await response.json();
-    jsonData = json.data;
+    const searchParams = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+    });
+    if (viewerUid) {
+      const viewerId = await resolveBackendUserId(viewerUid);
+      if (viewerId) {
+        searchParams.append("viewerId", viewerId);
+      } else {
+        searchParams.append("viewerUid", viewerUid);
+      }
+    }
+
+    const requestUrl = `${API_BASE_URL}/lists?${searchParams.toString()}`;
+    const response = await fetch(requestUrl, fetchData);
+    const json = await parseJsonSafely(response, "GET /lists");
+
+    if (!response.ok || !json) {
+      console.error("[getAllLists] request failed", {
+        requestUrl,
+        status: response.status,
+        body: json,
+      });
+      return [];
+    }
+
+    const jsonData = json.data || [];
     console.log("getAll List params: ", limit, offset);
     const listArray = await Promise.all(jsonData.map(jsonToLists));
     //console.log("List Array " + listArray);
@@ -58,9 +81,7 @@ export const getAllLists = async (limit = 5, offset = 0) => {
   }
 };
 export const getHasMore = async (limit = 5, offset = 0) => {
-  let json;
-  // let reviewArray;
-  fetchData = {
+  const fetchData = {
     method: "GET",
     headers: {
       Accept: "application/json",
@@ -72,8 +93,8 @@ export const getHasMore = async (limit = 5, offset = 0) => {
       `${API_BASE_URL}/lists?limit=${limit}&offset=${offset}`,
       fetchData
     );
-    json = await response.json();
-    jsonData = json.hasMore;
+    const json = await parseJsonSafely(response, "GET /lists hasMore");
+    const jsonData = json?.hasMore;
     console.log("getHasMore call: ", jsonData);
     //console.log("List Array " + listArray);
     return jsonData;

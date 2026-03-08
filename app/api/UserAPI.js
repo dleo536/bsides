@@ -21,6 +21,14 @@ const parseJsonSafely = async (response, label) => {
   }
 };
 
+const isUuid = (value) =>
+  typeof value === "string" &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value
+  );
+
+const backendUserIdCache = new Map();
+
 export const getProfileImage = async (uid) => {
   const imageRef = ref(storage, `profileImages/${uid}.jpg`);
 
@@ -122,6 +130,22 @@ export const getFullUserByUid = async (uid) => {
   }
 };
 
+export const resolveBackendUserId = async (identifier) => {
+  if (!identifier) return null;
+  if (isUuid(identifier)) return identifier;
+
+  if (backendUserIdCache.has(identifier)) {
+    return backendUserIdCache.get(identifier);
+  }
+
+  const fullUser = await getFullUserByUid(identifier);
+  const resolvedId = fullUser?.id ?? null;
+  if (resolvedId) {
+    backendUserIdCache.set(identifier, resolvedId);
+  }
+  return resolvedId;
+};
+
 export const getUsersByUsername = async (username) => {
   console.log("Getting user by username:", username);
   let json;
@@ -182,24 +206,148 @@ export const patchUser = async (uid, backlogListId, favoriteListId) => {
     console.error("Fetch error:", error);
   }
 };
-export const followUser = async (currentUid, userUid) => {
-  console.log("Following user:", userUid);
-  try {
-    const response = await fetch(
-      `${API_BASE_URL}/users/${currentUid}/follow/${userUid}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-      }
-    );
-    const data = await response.json();
-    console.log("Follow response:", data);
-    return response;
-  } catch (error) {
-    console.error("Follow error:", error);
-    throw error;
+export const followUser = async (currentUid, targetUserId) => {
+  if (!currentUid || !targetUserId) {
+    throw new Error("currentUid and targetUserId are required");
   }
+
+  const viewerId = await resolveBackendUserId(currentUid);
+  if (!viewerId) {
+    throw new Error("Unable to resolve current user id");
+  }
+  const targetId =
+    (await resolveBackendUserId(targetUserId)) || targetUserId;
+
+  const requestUrl = `${API_BASE_URL}/users/${encodeURIComponent(
+    targetId
+  )}/follow?viewerId=${encodeURIComponent(viewerId)}`;
+
+  const response = await fetch(requestUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+  });
+  const data = await parseJsonSafely(response, "POST /users/:id/follow");
+
+  if (!response.ok) {
+    console.error("[followUser] request failed", {
+      requestUrl,
+      status: response.status,
+      body: data,
+    });
+    throw new Error(data?.message || "Failed to follow user");
+  }
+
+  return data;
+};
+
+export const unfollowUser = async (currentUid, targetUserId) => {
+  if (!currentUid || !targetUserId) {
+    throw new Error("currentUid and targetUserId are required");
+  }
+
+  const viewerId = await resolveBackendUserId(currentUid);
+  if (!viewerId) {
+    throw new Error("Unable to resolve current user id");
+  }
+  const targetId =
+    (await resolveBackendUserId(targetUserId)) || targetUserId;
+
+  const requestUrl = `${API_BASE_URL}/users/${encodeURIComponent(
+    targetId
+  )}/follow?viewerId=${encodeURIComponent(viewerId)}`;
+
+  const response = await fetch(requestUrl, {
+    method: "DELETE",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+  });
+  const data = await parseJsonSafely(response, "DELETE /users/:id/follow");
+
+  if (!response.ok) {
+    console.error("[unfollowUser] request failed", {
+      requestUrl,
+      status: response.status,
+      body: data,
+    });
+    throw new Error(data?.message || "Failed to unfollow user");
+  }
+
+  return data;
+};
+
+export const getFollowState = async (currentUid, targetUserId) => {
+  if (!currentUid || !targetUserId) {
+    return { following: false, isSelf: false };
+  }
+
+  const viewerId = await resolveBackendUserId(currentUid);
+  if (!viewerId) {
+    return { following: false, isSelf: false };
+  }
+  const targetId =
+    (await resolveBackendUserId(targetUserId)) || targetUserId;
+
+  const requestUrl = `${API_BASE_URL}/users/${encodeURIComponent(
+    targetId
+  )}/is-following?viewerId=${encodeURIComponent(viewerId)}`;
+
+  const response = await fetch(requestUrl, {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+  });
+  const data = await parseJsonSafely(response, "GET /users/:id/is-following");
+
+  if (!response.ok) {
+    console.error("[getFollowState] request failed", {
+      requestUrl,
+      status: response.status,
+      body: data,
+    });
+    throw new Error(data?.message || "Failed to get follow state");
+  }
+
+  return data || { following: false, isSelf: false };
+};
+
+export const getMyFollowing = async (currentUid) => {
+  if (!currentUid) {
+    return { followingIds: [], following: [] };
+  }
+
+  const viewerId = await resolveBackendUserId(currentUid);
+  if (!viewerId) {
+    return { followingIds: [], following: [] };
+  }
+
+  const requestUrl = `${API_BASE_URL}/users/me/following?viewerId=${encodeURIComponent(
+    viewerId
+  )}`;
+
+  const response = await fetch(requestUrl, {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+  });
+  const data = await parseJsonSafely(response, "GET /users/me/following");
+
+  if (!response.ok) {
+    console.error("[getMyFollowing] request failed", {
+      requestUrl,
+      status: response.status,
+      body: data,
+    });
+    throw new Error(data?.message || "Failed to get following list");
+  }
+
+  return data || { followingIds: [], following: [] };
 };

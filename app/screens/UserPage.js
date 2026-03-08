@@ -19,6 +19,7 @@ import {
   FlatList,
   SafeAreaView,
   ScrollView,
+  Alert,
 } from "react-native";
 import { useRoute } from "@react-navigation/native";
 import { auth } from "../config/firebase";
@@ -33,6 +34,12 @@ import { getAlbumList } from "../api/SpotifyAPI";
 import ListElement from "../components/listElement";
 import { getReviewsByUID } from "../api/ReviewAPI";
 import ReviewElement from "../components/reviewElement";
+import {
+  followUser,
+  getFollowState,
+  getProfileImage as getProfileImageByUid,
+  unfollowUser,
+} from "../api/UserAPI";
 const UserPage = () => {
   const windowWidth = Dimensions.get("window").width;
   const windowHeight = Dimensions.get("window").height;
@@ -45,10 +52,18 @@ const UserPage = () => {
   const [reviews, setReviews] = useState([]);
   const [profileImage, setProfileImage] = useState("");
   const [followLoading, setFollowLoading] = useState(false);
+  const [followStateLoading, setFollowStateLoading] = useState(false);
   const [isFollowing, setIsFollowing] = useState(false);
+  const [followError, setFollowError] = useState("");
 
   const currentUid = auth?.currentUser?.uid;
-  const isOwnProfile = currentUid && user?.uid && currentUid === user.uid;
+  const profileUserIdentifier = user?.id || user?.oauthId || user?.uid;
+  const profileFirebaseUid = user?.oauthId || user?.uid || null;
+  const isOwnProfile =
+    !!currentUid &&
+    (currentUid === user?.oauthId ||
+      currentUid === user?.uid ||
+      currentUid === profileUserIdentifier);
 
   useEffect(() => {
     if (activeTab === "lists") {
@@ -57,17 +72,75 @@ const UserPage = () => {
       getReviews();
     }
   }, [activeTab]);
+  useEffect(() => {
+    if (!profileFirebaseUid) return;
+
+    let mounted = true;
+    const loadProfileImage = async () => {
+      const image = await getProfileImageByUid(profileFirebaseUid);
+      if (mounted && image) {
+        setProfileImage(image);
+      }
+    };
+
+    loadProfileImage();
+
+    return () => {
+      mounted = false;
+    };
+  }, [profileFirebaseUid]);
+
+  useEffect(() => {
+    if (!currentUid || !profileUserIdentifier || isOwnProfile) {
+      setIsFollowing(false);
+      setFollowStateLoading(false);
+      setFollowError("");
+      return;
+    }
+
+    let mounted = true;
+    const loadFollowState = async () => {
+      setFollowStateLoading(true);
+      setFollowError("");
+      try {
+        const followState = await getFollowState(currentUid, profileUserIdentifier);
+        if (mounted) {
+          setIsFollowing(Boolean(followState?.following));
+        }
+      } catch (error) {
+        console.error("loadFollowState error:", error);
+        if (mounted) {
+          setFollowError("Could not load follow status.");
+        }
+      } finally {
+        if (mounted) {
+          setFollowStateLoading(false);
+        }
+      }
+    };
+
+    loadFollowState();
+
+    return () => {
+      mounted = false;
+    };
+  }, [currentUid, isOwnProfile, profileUserIdentifier]);
+
   const getLists = async () => {
-    const lists = await getListByUID(user.uid);
-    setLists(lists);
+    if (!profileUserIdentifier) {
+      setLists([]);
+      return;
+    }
+    const userLists = await getListByUID(profileUserIdentifier);
+    setLists(Array.isArray(userLists) ? userLists : []);
   };
   const getReviews = async () => {
-    const reviews = await getReviewsByUID(user.uid);
-    setReviews(reviews);
-  };
-  const getProfileImage = async () => {
-    const profileImage = await getProfileImage(user.uid);
-    setProfileImage(profileImage);
+    if (!profileUserIdentifier) {
+      setReviews([]);
+      return;
+    }
+    const userReviews = await getReviewsByUID(profileUserIdentifier);
+    setReviews(Array.isArray(userReviews) ? userReviews : []);
   };
 
   // --- Follow handler ---
@@ -76,19 +149,27 @@ const UserPage = () => {
       Alert.alert("Sign in required", "Please sign in to follow users.");
       return;
     }
-    if (!user?.uid) return;
+    if (!profileUserIdentifier) return;
+    if (isOwnProfile) {
+      Alert.alert("Unavailable", "You cannot follow yourself.");
+      return;
+    }
 
     try {
       setFollowLoading(true);
+      setFollowError("");
 
-      // For now, we just simulate success:
-      await new Promise((res) => setTimeout(res, 500));
-
-      setIsFollowing(true);
-      // Optional: update follower counts here if you’re tracking them
-      // setFollowerCount((c) => c + 1);
+      if (isFollowing) {
+        const response = await unfollowUser(currentUid, profileUserIdentifier);
+        setIsFollowing(Boolean(response?.following));
+      } else {
+        const response = await followUser(currentUid, profileUserIdentifier);
+        setIsFollowing(Boolean(response?.following));
+      }
     } catch (e) {
-      Alert.alert("Error", "Could not follow this user. Please try again.");
+      console.error("handleFollowPress error:", e);
+      setFollowError("Could not update follow status. Please try again.");
+      Alert.alert("Error", "Could not update follow status. Please try again.");
     } finally {
       setFollowLoading(false);
     }
@@ -113,25 +194,31 @@ const UserPage = () => {
           {!isOwnProfile && (
             <TouchableOpacity
               onPress={handleFollowPress}
-              disabled={followLoading || isFollowing}
+              disabled={followLoading || followStateLoading}
               style={[
                 styles.followButton,
                 isFollowing && styles.followingButton,
-                (followLoading || isFollowing) && { opacity: 0.7 },
+                (followLoading || followStateLoading) && { opacity: 0.7 },
               ]}
               accessibilityRole="button"
               accessibilityLabel={isFollowing ? "Following" : "Follow"}
             >
-              {followLoading ? (
+              {followLoading || followStateLoading ? (
                 <ActivityIndicator size="small" />
               ) : (
-                <Text style={styles.followButtonText}>
+                <Text
+                  style={[
+                    styles.followButtonText,
+                    isFollowing && styles.followingButtonText,
+                  ]}
+                >
                   {isFollowing ? "Following" : "Follow"}
                 </Text>
               )}
             </TouchableOpacity>
           )}
         </View>
+        {followError ? <Text style={styles.followErrorText}>{followError}</Text> : null}
 
         {/* --- Stats Section --- */}
         <View style={styles.statsRow}>
@@ -345,6 +432,16 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: "black",
+  },
+  followingButtonText: {
+    color: "white",
+  },
+  followErrorText: {
+    color: "red",
+    fontSize: 13,
+    paddingHorizontal: 16,
+    marginTop: -8,
+    marginBottom: 8,
   },
 });
 

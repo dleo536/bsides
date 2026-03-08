@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   View,
   Text,
@@ -13,13 +13,14 @@ import {
 } from "react-native";
 // import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
 import { SafeAreaView, SafeAreaProvider } from "react-native";
-import { useNavigation } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { getAllReviews } from "../api/ReviewAPI.js";
 import ReviewElement from "../components/reviewElement.js";
 import ListElement from "../components/listElement.js";
 import { TabView, SceneMap, TabBar } from "react-native-tab-view";
 import { getAllLists, getHasMore } from "../api/ListAPI.js";
 import { createMaterialTopTabNavigator } from "@react-navigation/material-top-tabs";
+import { auth } from "../config/firebase";
 
 const Tab = createMaterialTopTabNavigator();
 
@@ -27,23 +28,24 @@ const limit = 5;
 
 const ReviewList = ({ fetchFunction }) => {
   const navigation = useNavigation();
+  const viewerUid = auth?.currentUser?.uid ?? null;
   const [data, setData] = useState([]);
   const [offset, setOffset] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [selectedButton, setSelectedButton] = useState("List");
-  const fetchData = async () => {
-    if (loading || !hasMore) return;
+  const fetchData = async (nextOffset = offset, reset = false) => {
+    if ((loading || !hasMore) && !reset) return;
 
     setLoading(true);
     try {
-      const response = await getAllReviews(limit, offset);
-      console.log(response);
-      setData((prev) => [...prev, ...response]);
-      setOffset((prev) => prev + response.length);
+      const response = await getAllReviews(limit, nextOffset, viewerUid);
+      const nextData = Array.isArray(response) ? response : [];
+      setData((prev) => (reset ? nextData : [...prev, ...nextData]));
+      setOffset(nextOffset + nextData.length);
 
-      if (response.length < limit) {
+      if (nextData.length < limit) {
         setHasMore(false);
       }
     } catch (error) {
@@ -53,23 +55,27 @@ const ReviewList = ({ fetchFunction }) => {
     }
   };
 
-  useEffect(() => {}, []);
-
-  const onRefresh = () => {
-    setRefreshing(true);
+  const resetAndFetch = async () => {
     setData([]);
     setOffset(0);
     setHasMore(true);
-    setTimeout(() => {
-      fetchData();
-      setRefreshing(false);
-    }, 1000);
+    await fetchData(0, true);
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      resetAndFetch();
+    }, [viewerUid])
+  );
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    resetAndFetch().finally(() => setRefreshing(false));
   };
 
   const loadMore = () => {
     if (!loading && hasMore) {
-      setLoading(true);
-      fetchData().finally(() => setLoading(false));
+      fetchData(offset, false);
     }
   };
 
@@ -144,22 +150,24 @@ const ReviewList = ({ fetchFunction }) => {
 };
 const ListList = ({ fetchFunction }) => {
   const navigation = useNavigation();
+  const viewerUid = auth?.currentUser?.uid ?? null;
   const [data, setData] = useState([]);
   const [offset, setOffset] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
 
-  const fetchData = async () => {
-    if (loading || !hasMore) return;
+  const fetchData = async (nextOffset = offset, reset = false) => {
+    if ((loading || !hasMore) && !reset) return;
 
     setLoading(true);
     try {
-      const response = await getAllLists(limit, offset);
-      setData((prev) => [...prev, ...response]);
-      setOffset((prev) => prev + response.length);
+      const response = await getAllLists(limit, nextOffset, viewerUid);
+      const nextData = Array.isArray(response) ? response : [];
+      setData((prev) => (reset ? nextData : [...prev, ...nextData]));
+      setOffset(nextOffset + nextData.length);
 
-      if (response.length < limit) {
+      if (nextData.length < limit) {
         setHasMore(false);
       }
     } catch (error) {
@@ -169,24 +177,28 @@ const ListList = ({ fetchFunction }) => {
     }
   };
 
-  useEffect(() => {}, []);
-
-  const onRefresh = () => {
-    setRefreshing(true);
+  const resetAndFetch = async () => {
     setData([]);
     setOffset(0);
     setHasMore(true);
-    setTimeout(() => {
-      fetchData();
-      setRefreshing(false);
-    }, 1000);
+    await fetchData(0, true);
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      resetAndFetch();
+    }, [viewerUid])
+  );
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    resetAndFetch().finally(() => setRefreshing(false));
   };
 
   const loadMore = () => {
     if (!loading && hasMore) {
       console.log("Loading more Lists nooooooo!!!");
-      setLoading(true);
-      fetchData().finally(() => setLoading(false));
+      fetchData(offset, false);
     }
   };
 

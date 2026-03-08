@@ -100,7 +100,15 @@ function SearchStack() {
         },
       }}
     >
-      <Stack.Screen name="SearchPage" component={SearchPage} />
+      <Stack.Screen
+        name="SearchPage"
+        component={SearchPage}
+        options={{
+          headerLeft: () => null,
+          headerBackVisible: false,
+          gestureEnabled: false,
+        }}
+      />
       <Stack.Screen
         name="AlbumPage"
         component={AlbumPage}
