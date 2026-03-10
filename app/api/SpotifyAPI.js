@@ -215,7 +215,7 @@ export const getAlbumsByName = async (albumName, page = 0, limit = 10) => {
   const alb = getAccessToken()
     .then((token) => fetchAlbumsByName(albumName, token, limit, offset))
     .then((albums) => {
-      return albums.albums.items;
+      return (albums?.albums?.items || []).filter(isFullAlbumRelease);
     });
   return alb;
 };
@@ -248,4 +248,116 @@ export const getTrackListFromSpotify = async (albumID) => {
   const token = await getAccessToken();
   const trackList = await fetchTrackList(albumID, token);
   return trackList;
+};
+
+const resolveMarket = (market) => {
+  if (typeof market === "string" && market.trim().length === 2) {
+    return market.trim().toUpperCase();
+  }
+
+  try {
+    const locale = Intl.DateTimeFormat().resolvedOptions().locale || "";
+    const localeCountry = locale.split("-")[1];
+    if (localeCountry && localeCountry.length === 2) {
+      return localeCountry.toUpperCase();
+    }
+  } catch (error) {
+    // Fall back to US if locale parsing is unavailable.
+  }
+
+  return "US";
+};
+
+export const toAlbumCardModel = (album) => ({
+  id: album?.id ?? `${album?.name || "album"}-${album?.release_date || ""}`,
+  title: album?.name || "Untitled Album",
+  artistSubtitle:
+    Array.isArray(album?.artists) && album.artists.length > 0
+      ? album.artists.map((artist) => artist.name).join(", ")
+      : "Unknown Artist",
+  coverUrl: album?.images?.[0]?.url || null,
+  releaseDate: album?.release_date || null,
+  spotifyAlbum: album,
+});
+
+const isFullAlbumRelease = (album) =>
+  typeof album?.album_type === "string"
+    ? album.album_type.toLowerCase() === "album"
+    : true;
+
+const searchAlbumCards = async ({
+  query,
+  limit = 20,
+  offset = 0,
+  market,
+}) => {
+  const token = await getAccessToken();
+  const resolvedMarket = resolveMarket(market);
+  const encodedQuery = encodeURIComponent(query);
+  const url = `https://api.spotify.com/v1/search?q=${encodedQuery}&type=album&limit=${limit}&offset=${offset}&market=${resolvedMarket}`;
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(
+      `Spotify search failed (${response.status}): ${errorBody?.slice?.(0, 180) || "unknown error"}`
+    );
+  }
+
+  const data = await response.json();
+  const rawAlbumItems = Array.isArray(data?.albums?.items) ? data.albums.items : [];
+  const albumItems = rawAlbumItems.filter(isFullAlbumRelease);
+  const total = data?.albums?.total || 0;
+  const nextOffset = offset + rawAlbumItems.length;
+
+  return {
+    items: albumItems.map(toAlbumCardModel),
+    total,
+    hasMore: nextOffset < total,
+    market: resolvedMarket,
+    nextOffset,
+  };
+};
+
+export const searchAlbumsByYear = async (
+  year,
+  { limit = 20, offset = 0, market } = {}
+) => {
+  return searchAlbumCards({
+    query: `year:${year}`,
+    limit,
+    offset,
+    market,
+  });
+};
+
+export const searchNewAlbums = async ({
+  limit = 20,
+  offset = 0,
+  market,
+} = {}) => {
+  return searchAlbumCards({
+    query: "tag:new",
+    limit,
+    offset,
+    market,
+  });
+};
+
+export const searchNewAlbumsByMarket = async (
+  countryCode,
+  { limit = 20, offset = 0 } = {}
+) => {
+  return searchAlbumCards({
+    query: "tag:new",
+    limit,
+    offset,
+    market: countryCode,
+  });
 };

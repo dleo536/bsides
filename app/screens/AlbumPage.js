@@ -37,6 +37,7 @@ import { getAlbumCreditsByName } from "../api/MusicBrainz";
 import { searchReleaseGroup } from "../api/MusicBrainz";
 import { TabView, SceneMap } from "react-native-tab-view";
 import { TabBar } from "react-native-tab-view";
+import { resolveBackendUserId } from "../api/UserAPI";
 
 const PersonnelTab = ({ isFocused, albumData }) => {
   const [credits, setCredits] = useState([]);
@@ -330,10 +331,15 @@ const AlbumPage = (route) => {
     //send to reviewAPI
 
     try {
-      // Get current user ID
-      const userId = auth.currentUser?.uid;
-      if (!userId) {
+      const firebaseUid = auth.currentUser?.uid;
+      if (!firebaseUid) {
         alert("You must be logged in to submit a review");
+        return;
+      }
+
+      const backendUserId = await resolveBackendUserId(firebaseUid);
+      if (!backendUserId) {
+        alert("Unable to resolve your user profile. Please try again.");
         return;
       }
 
@@ -376,7 +382,7 @@ const AlbumPage = (route) => {
 
       // Create Review object with proper structure matching backend DTO
       const review = new Review({
-        userId: userId, 
+        userId: backendUserId,
         spotifyAlbumId: albumData.id, // Store Spotify ID for reference
         releaseGroupMbId: releaseGroupMbId,
         albumTitleSnapshot: albumTitle,
@@ -388,7 +394,7 @@ const AlbumPage = (route) => {
         visibility: 'public',
       });
 
-      await postReview(userId, review);
+      await postReview(backendUserId, review);
       console.log("----------->>>>>>>>>> 999939393 ---->> review submitted: ", review);
       setReviewModalVisible(false);
       setRating("");

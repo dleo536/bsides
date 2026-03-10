@@ -28,17 +28,58 @@ const isUuid = (value) =>
   );
 
 const backendUserIdCache = new Map();
+const profileImageUrlCache = new Map();
+const profileImageExtensions = ["", ".jpg", ".jpeg", ".png", ".webp"];
 
-export const getProfileImage = async (uid) => {
-  const imageRef = ref(storage, `profileImages/${uid}.jpg`);
+const normalizeIdentifier = (value) =>
+  typeof value === "string" ? value.trim() : "";
 
-  try {
-    const url = await getDownloadURL(imageRef);
-    return url; // You can use this as the `src` or `uri`
-  } catch (error) {
-    console.error("Image not found or access denied:", error);
+const cacheResolvedUser = (user) => {
+  if (user?.id && user?.oauthId) {
+    backendUserIdCache.set(user.oauthId, user.id);
+  }
+};
+
+const getProfileImagePathCandidates = (identifier) => {
+  const normalizedIdentifier = normalizeIdentifier(identifier);
+  if (!normalizedIdentifier) {
+    return [];
+  }
+
+  return profileImageExtensions.map(
+    (extension) => `profileImages/${normalizedIdentifier}${extension}`
+  );
+};
+
+export const getProfileImage = async (identifier) => {
+  const normalizedIdentifier = normalizeIdentifier(identifier);
+  if (!normalizedIdentifier || !storage) {
     return null;
   }
+
+  if (profileImageUrlCache.has(normalizedIdentifier)) {
+    return profileImageUrlCache.get(normalizedIdentifier);
+  }
+
+  let lastError = null;
+
+  for (const path of getProfileImagePathCandidates(normalizedIdentifier)) {
+    try {
+      const url = await getDownloadURL(ref(storage, path));
+      profileImageUrlCache.set(normalizedIdentifier, url);
+      return url;
+    } catch (error) {
+      if (error?.code !== "storage/object-not-found") {
+        lastError = error;
+      }
+    }
+  }
+
+  if (lastError) {
+    console.error("Image not found or access denied:", lastError);
+  }
+
+  return null;
 };
 
 export const getUsernameByUID = async (userID) => {
@@ -64,6 +105,42 @@ export const getUsernameByUID = async (userID) => {
   }
 };
 
+export const getUserByIdentifier = async (identifier) => {
+  if (!identifier) {
+    return null;
+  }
+
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/users/${encodeURIComponent(identifier)}`,
+      {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    const user = await parseJsonSafely(response, "GET /users/:id");
+
+    if (!response.ok) {
+      console.error("[getUserByIdentifier] request failed", {
+        identifier,
+        status: response.status,
+        body: user,
+      });
+      return null;
+    }
+
+    cacheResolvedUser(user);
+
+    return user;
+  } catch (error) {
+    console.error("getUserByIdentifier error:", error);
+    return null;
+  }
+};
+
 /**
  * Fetch full user object by Firebase UID.
  * Returns user with id (UUID) for use as ownerId when creating lists.
@@ -81,6 +158,7 @@ export const getFullUserByUid = async (uid) => {
 
     if (response.ok) {
       const user = await parseJsonSafely(response, "GET /users/:id");
+      cacheResolvedUser(user);
       return user;
     }
 
@@ -97,7 +175,10 @@ export const getFullUserByUid = async (uid) => {
     );
     if (response.ok) {
       const user = await parseJsonSafely(response, "GET /users?oauthId");
-      if (user && user.id) return user;
+      if (user && user.id) {
+        cacheResolvedUser(user);
+        return user;
+      }
     }
 
     // 3) Fallback by username (for older users without oauthId populated)
@@ -118,6 +199,7 @@ export const getFullUserByUid = async (uid) => {
       if (response.ok) {
         const users = await parseJsonSafely(response, "GET /users?username");
         if (Array.isArray(users) && users.length > 0) {
+          cacheResolvedUser(users[0]);
           return users[0];
         }
       }
@@ -146,6 +228,59 @@ export const resolveBackendUserId = async (identifier) => {
   return resolvedId;
 };
 
+export const getProfileImageForUser = async (user) => {
+  if (!user) {
+    return null;
+  }
+
+  if (typeof user?.photoURL === "string" && user.photoURL.trim()) {
+    return user.photoURL;
+  }
+
+  if (typeof user?.avatarUrl === "string" && user.avatarUrl.trim()) {
+    return user.avatarUrl;
+  }
+
+  const identifierCandidates = [user?.oauthId, user?.uid]
+    .map(normalizeIdentifier)
+    .filter(Boolean);
+
+  for (const identifier of identifierCandidates) {
+    const imageUrl = await getProfileImage(identifier);
+    if (imageUrl) {
+      return imageUrl;
+    }
+  }
+
+  if (user?.id) {
+    const latestUser = await getUserByIdentifier(user.id);
+    if (!latestUser) {
+      return null;
+    }
+
+    if (typeof latestUser?.photoURL === "string" && latestUser.photoURL.trim()) {
+      return latestUser.photoURL;
+    }
+
+    if (typeof latestUser?.avatarUrl === "string" && latestUser.avatarUrl.trim()) {
+      return latestUser.avatarUrl;
+    }
+
+    const refreshedIdentifierCandidates = [latestUser?.oauthId, latestUser?.uid]
+      .map(normalizeIdentifier)
+      .filter(Boolean);
+
+    for (const identifier of refreshedIdentifierCandidates) {
+      const imageUrl = await getProfileImage(identifier);
+      if (imageUrl) {
+        return imageUrl;
+      }
+    }
+  }
+
+  return null;
+};
+
 export const getUsersByUsername = async (username) => {
   console.log("Getting user by username:", username);
   let json;
@@ -158,7 +293,7 @@ export const getUsersByUsername = async (username) => {
   };
   try {
     const response = await fetch(
-      `${API_BASE_URL}/users?username=${username}`
+      `${API_BASE_URL}/users?username=${encodeURIComponent(username)}`
     );
     json = await response.json();
     console.log("Log from USER API:", json);

@@ -1,62 +1,402 @@
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
+  ActivityIndicator,
+  FlatList,
   Image,
   Modal,
   Pressable,
-  ScrollView,
-  TextInput,
-  FlatList,
   RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
-
-import React, { useEffect, useState, useCallback } from "react";
-import { initializeApp } from "@firebase/app";
-import { getFirestore } from "firebase/firestore";
-import { collection, addDoc } from "firebase/firestore";
-
-import { app } from "../config/firebase";
-import { auth } from "../config/firebase";
-import { getAuth, signOut, onAuthStateChanged } from "firebase/auth";
+import { signOut, onAuthStateChanged } from "firebase/auth";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
-import { TouchableOpacity } from "react-native";
-import defaultProfileImage from "../../assets/defaultProfilePicture.png";
-import { getListByUID, postList } from "../api/ListAPI";
-import ListElement from "../components/listElement";
+import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
 import { createMaterialTopTabNavigator } from "@react-navigation/material-top-tabs";
+import defaultProfileImage from "../../assets/defaultProfilePicture.png";
+import { auth } from "../config/firebase";
+import { getListByUID, getMyLikedLists, postList } from "../api/ListAPI";
+import { getAlbum } from "../api/SpotifyAPI";
+import ListElement from "../components/listElement";
 
 const Tab = createMaterialTopTabNavigator();
+const TOP_ALBUM_LIMIT = 5;
 
-//const db = getFirestore(app);
+const normalizeListValue = (value) =>
+  typeof value === "string" ? value.trim().toLowerCase() : "";
 
-//get users lists
+const findFavoritesList = (lists) => {
+  if (!Array.isArray(lists)) {
+    return null;
+  }
 
-//create new list
+  return (
+    lists.find((list) => normalizeListValue(list?.listType) === "favorites") ||
+    lists.find((list) => {
+      const normalizedTitle = normalizeListValue(list?.title || list?.listName);
+      const normalizedSlug = normalizeListValue(list?.slug);
 
-//get users reviews
+      return (
+        normalizedSlug === "favorites" ||
+        normalizedTitle === "favorites" ||
+        normalizedTitle === "favorite albums"
+      );
+    }) ||
+    null
+  );
+};
+
+const isBacklogList = (list) => {
+  const normalizedTitle = normalizeListValue(list?.title || list?.listName);
+  const normalizedSlug = normalizeListValue(list?.slug);
+
+  return normalizedSlug === "backlog" || normalizedTitle === "backlog";
+};
+
+const findBacklogList = (lists) => {
+  if (!Array.isArray(lists)) {
+    return null;
+  }
+
+  return lists.find((list) => isBacklogList(list)) || null;
+};
+
+const formatJoinLabel = (creationTime) => {
+  if (!creationTime) {
+    return "Member";
+  }
+
+  const date = new Date(creationTime);
+  if (Number.isNaN(date.getTime())) {
+    return "Member";
+  }
+
+  return `Joined ${date.getFullYear()}`;
+};
+
+const ProfileActionSheet = ({ visible, onClose, onSignOut, user }) => (
+  <Modal
+    animationType="fade"
+    transparent
+    visible={visible}
+    onRequestClose={onClose}
+  >
+    <View style={styles.sheetRoot}>
+      <Pressable style={styles.sheetBackdrop} onPress={onClose} />
+      <View style={styles.sheetContainer}>
+        <View style={styles.sheetHandle} />
+        <Text style={styles.sheetTitle}>Profile actions</Text>
+        <Text style={styles.sheetSubtitle}>
+          {user?.email || user?.displayName || "Manage your account"}
+        </Text>
+        <Pressable style={styles.sheetActionButton} onPress={onSignOut}>
+          <Ionicons name="log-out-outline" size={20} color="#9f1239" />
+          <Text style={styles.sheetActionText}>Sign out</Text>
+        </Pressable>
+        <Pressable style={styles.sheetCancelButton} onPress={onClose}>
+          <Text style={styles.sheetCancelText}>Close</Text>
+        </Pressable>
+      </View>
+    </View>
+  </Modal>
+);
+
+const TopAlbumCard = ({ album, index }) => {
+  const artistNames =
+    Array.isArray(album?.artists) && album.artists.length > 0
+      ? album.artists.map((artist) => artist?.name).filter(Boolean).join(", ")
+      : "Unknown Artist";
+  const coverUri = album?.images?.[0]?.url;
+
+  if (!album) {
+    return (
+      <View style={[styles.topAlbumCard, styles.topAlbumPlaceholderCard]}>
+        <View style={styles.topAlbumPlaceholderCover}>
+          <Ionicons name="add" size={22} color="#6b7280" />
+        </View>
+        <Text style={styles.topAlbumPlaceholderTitle}>Open slot</Text>
+        <Text style={styles.topAlbumPlaceholderSubtitle}>Add more favorites</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.topAlbumCard}>
+      {coverUri ? (
+        <Image source={{ uri: coverUri }} style={styles.topAlbumCover} />
+      ) : (
+        <View style={[styles.topAlbumCover, styles.topAlbumCoverFallback]}>
+          <Text style={styles.topAlbumCoverFallbackText}>
+            {(album?.name || "Album").slice(0, 1).toUpperCase()}
+          </Text>
+        </View>
+      )}
+      <View style={styles.rankBadge}>
+        <Text style={styles.rankBadgeText}>#{index + 1}</Text>
+      </View>
+      <Text style={styles.topAlbumTitle} numberOfLines={1}>
+        {album?.name || "Untitled Album"}
+      </Text>
+      <Text style={styles.topAlbumArtist} numberOfLines={1}>
+        {artistNames}
+      </Text>
+    </View>
+  );
+};
+
+const toBacklogAlbumEntry = (albumId, albumData) => {
+  const artistNames =
+    Array.isArray(albumData?.artists) && albumData.artists.length > 0
+      ? albumData.artists.map((artist) => artist?.name).filter(Boolean).join(", ")
+      : "Unknown Artist";
+  const releaseYear =
+    typeof albumData?.release_date === "string" && albumData.release_date.length >= 4
+      ? albumData.release_date.slice(0, 4)
+      : null;
+
+  return {
+    id: albumData?.id || albumId,
+    spotifyId: albumId,
+    albumData: albumData || null,
+    title: albumData?.name || "Album unavailable",
+    artistNames,
+    releaseYear,
+    coverUrl: albumData?.images?.[0]?.url || null,
+  };
+};
+
+const BacklogAlbumRow = ({ album, onPress }) => (
+  <TouchableOpacity
+    style={styles.backlogAlbumRow}
+    onPress={onPress}
+    disabled={!album?.albumData}
+    activeOpacity={album?.albumData ? 0.84 : 1}
+  >
+    {album?.coverUrl ? (
+      <Image source={{ uri: album.coverUrl }} style={styles.backlogAlbumCover} />
+    ) : (
+      <View style={[styles.backlogAlbumCover, styles.backlogAlbumCoverFallback]}>
+        <Text style={styles.backlogAlbumCoverFallbackText}>
+          {(album?.title || "Album").slice(0, 1).toUpperCase()}
+        </Text>
+      </View>
+    )}
+    <View style={styles.backlogAlbumContent}>
+      <Text style={styles.backlogAlbumTitle} numberOfLines={1}>
+        {album?.title || "Untitled Album"}
+      </Text>
+      <Text style={styles.backlogAlbumArtist} numberOfLines={1}>
+        {album?.artistNames || "Unknown Artist"}
+      </Text>
+      {album?.releaseYear ? (
+        <Text style={styles.backlogAlbumMeta}>{album.releaseYear}</Text>
+      ) : null}
+    </View>
+    <Ionicons name="chevron-forward" size={18} color="#9ca3af" />
+  </TouchableOpacity>
+);
+
+const ProfileEntryCard = ({
+  title,
+  subtitle,
+  countLabel,
+  iconName,
+  onPress,
+  integrated = false,
+}) => (
+  <TouchableOpacity
+    style={[styles.profileEntryCard, integrated && styles.profileEntryCardIntegrated]}
+    onPress={onPress}
+    activeOpacity={0.88}
+  >
+    <View
+      style={[
+        styles.profileEntryIconWrap,
+        integrated && styles.profileEntryIconWrapIntegrated,
+      ]}
+    >
+      <Ionicons
+        name={iconName}
+        size={20}
+        color={integrated ? "#111827" : "#111827"}
+      />
+    </View>
+    <View style={styles.profileEntryTextWrap}>
+      <Text
+        style={[styles.profileEntryTitle, integrated && styles.profileEntryTitleIntegrated]}
+      >
+        {title}
+      </Text>
+      <Text
+        style={[
+          styles.profileEntrySubtitle,
+          integrated && styles.profileEntrySubtitleIntegrated,
+        ]}
+      >
+        {subtitle}
+      </Text>
+    </View>
+    <View style={styles.profileEntryMetaWrap}>
+      <Text
+        style={[styles.profileEntryCount, integrated && styles.profileEntryCountIntegrated]}
+      >
+        {countLabel}
+      </Text>
+      <Ionicons
+        name="chevron-forward"
+        size={18}
+        color={integrated ? "#6b7280" : "#6b7280"}
+      />
+    </View>
+  </TouchableOpacity>
+);
 
 const ProfileTab = () => {
   const navigation = useNavigation();
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(auth.currentUser);
   const [lists, setLists] = useState([]);
-  const [refreshing, setRefreshing] = React.useState(false);
+  const [topAlbums, setTopAlbums] = useState([]);
+  const [likedListsCount, setLikedListsCount] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const [topAlbumsLoading, setTopAlbumsLoading] = useState(false);
+  const [profileDataLoading, setProfileDataLoading] = useState(true);
+  const [actionModalVisible, setActionModalVisible] = useState(false);
+
+  const favoritesList = useMemo(() => findFavoritesList(lists), [lists]);
+  const favoriteCount = Array.isArray(favoritesList?.albumIds)
+    ? favoritesList.albumIds.length
+    : 0;
+  const topAlbumSlots = useMemo(
+    () => Array.from({ length: TOP_ALBUM_LIMIT }, (_, index) => topAlbums[index] || null),
+    [topAlbums]
+  );
+  const joinLabel = useMemo(
+    () => formatJoinLabel(user?.metadata?.creationTime),
+    [user?.metadata?.creationTime]
+  );
+  const profileSubtitle = profileDataLoading
+    ? "Loading your taste shelf..."
+    : favoriteCount
+    ? `${favoriteCount} album${favoriteCount === 1 ? "" : "s"} tucked into Favorites`
+    : "Start shaping your profile shelf with the albums you love most.";
+
+  const loadTopAlbums = useCallback(async (resolvedLists) => {
+    const nextFavoritesList = findFavoritesList(resolvedLists);
+    const favoriteAlbumIds = Array.isArray(nextFavoritesList?.albumIds)
+      ? nextFavoritesList.albumIds.filter(Boolean).slice(0, TOP_ALBUM_LIMIT)
+      : [];
+
+    if (favoriteAlbumIds.length === 0) {
+      setTopAlbums([]);
+      setTopAlbumsLoading(false);
+      return;
+    }
+
+    setTopAlbumsLoading(true);
+
+    try {
+      const results = await Promise.allSettled(
+        favoriteAlbumIds.map((albumId) => getAlbum(albumId))
+      );
+      const resolvedAlbums = results.flatMap((result) =>
+        result.status === "fulfilled" && result.value ? [result.value] : []
+      );
+      setTopAlbums(resolvedAlbums);
+    } finally {
+      setTopAlbumsLoading(false);
+    }
+  }, []);
+
+  const loadProfileData = useCallback(
+    async (firebaseUser = auth.currentUser) => {
+      if (!firebaseUser?.uid) {
+        setLists([]);
+        setTopAlbums([]);
+        setLikedListsCount(0);
+        setTopAlbumsLoading(false);
+        setProfileDataLoading(false);
+        return;
+      }
+
+      setProfileDataLoading(true);
+
+      try {
+        const [listsResult, likedListsResult] = await Promise.allSettled([
+          getListByUID(firebaseUser.uid),
+          getMyLikedLists(firebaseUser.uid, { offset: 0, limit: 1 }),
+        ]);
+        const nextLists =
+          listsResult.status === "fulfilled" && Array.isArray(listsResult.value)
+            ? listsResult.value
+            : [];
+        const nextLikedListsCount =
+          likedListsResult.status === "fulfilled"
+            ? Number(likedListsResult.value?.totalCount || 0)
+            : 0;
+
+        setLists(nextLists);
+        setLikedListsCount(nextLikedListsCount);
+        await loadTopAlbums(nextLists);
+      } catch (error) {
+        console.error("Profile data load error:", error);
+        setLists([]);
+        setTopAlbums([]);
+        setLikedListsCount(0);
+        setTopAlbumsLoading(false);
+      } finally {
+        setProfileDataLoading(false);
+      }
+    },
+    [loadTopAlbums]
+  );
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        setUser(user);
+    const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
+      if (nextUser) {
+        setUser(nextUser);
+        loadProfileData(nextUser);
       } else {
         navigation.replace("Landing");
       }
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [loadProfileData, navigation]);
 
-  const handleSignOut = () => {
+  useFocusEffect(
+    useCallback(() => {
+      const parent = navigation.getParent();
+
+      parent?.setOptions({
+        headerTitle: user?.displayName || "Profile",
+        headerRight: () => (
+          <TouchableOpacity
+            onPress={() => setActionModalVisible(true)}
+            style={styles.headerActionButton}
+          >
+            <Ionicons name="ellipsis-horizontal-outline" size={22} color="#111827" />
+          </TouchableOpacity>
+        ),
+      });
+
+      if (auth.currentUser?.uid) {
+        loadProfileData(auth.currentUser);
+      }
+
+      return () => {
+        setActionModalVisible(false);
+      };
+    }, [loadProfileData, navigation, user?.displayName])
+  );
+
+  const handleSignOut = useCallback(() => {
+    setActionModalVisible(false);
     signOut(auth)
       .then(() => {
         navigation.replace("Landing");
@@ -64,130 +404,296 @@ const ProfileTab = () => {
       .catch((error) => {
         console.error("Error signing out:", error);
       });
-  };
+  }, [navigation]);
 
-  useFocusEffect(
-    useCallback(() => {
-      if (!user) return;
-
-      const parent = navigation.getParent();
-      parent?.setOptions({
-        headerTitle: user?.displayName,
-        headerRight: () => (
-          <TouchableOpacity
-            onPress={() => console.log("settings")}
-            style={{ marginRight: 10 }}
-          >
-            <Ionicons name="ellipsis-horizontal-outline" size={24} />
-          </TouchableOpacity>
-        ),
-      });
-    }, [navigation, user])
-  );
-
-  useEffect(() => {
-    if (user) {
-      fetchUserLists();
+  const onRefresh = useCallback(async () => {
+    if (!auth.currentUser) {
+      return;
     }
-  }, [user]);
 
-  const onRefresh = React.useCallback(() => {
-    if (!user) return;
     setRefreshing(true);
-    fetchUserLists().then(() => {
-      setRefreshing(false);
-    });
-  }, [user]);
 
-  const fetchUserLists = async () => {
-    if (!user) return;
-    const response = await getListByUID(user.uid);
-    setLists(response);
-  };
+    try {
+      await auth.currentUser.reload();
+      setUser({ ...auth.currentUser });
+      await loadProfileData(auth.currentUser);
+    } catch (error) {
+      console.error("Profile refresh error:", error);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadProfileData]);
+
+  const openLikedLists = useCallback(() => {
+    navigation.navigate("LikedListsPage");
+  }, [navigation]);
 
   if (!user) {
-    return null;
+    return (
+      <SafeAreaProvider>
+        <SafeAreaView style={styles.container}>
+          <View style={styles.loadingState}>
+            <ActivityIndicator size="large" />
+          </View>
+        </SafeAreaView>
+      </SafeAreaProvider>
+    );
   }
 
   return (
     <SafeAreaProvider>
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.profileScreen}>
+        <ProfileActionSheet
+          visible={actionModalVisible}
+          onClose={() => setActionModalVisible(false)}
+          onSignOut={handleSignOut}
+          user={user}
+        />
         <ScrollView
-          contentContainerStyle={styles.scrollView}
+          contentContainerStyle={styles.profileScrollContent}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           }
         >
-          <View style={styles.container}>
-            <View style={styles.profileBody}>
+          <LinearGradient
+            colors={["#fff5cc", "#ffffff", "#f3f4f6"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.profileCanvas}
+          >
+            <View style={styles.profileHeroSection}>
               <Image
                 source={user.photoURL ? { uri: user.photoURL } : defaultProfileImage}
-                style={styles.image}
-              ></Image>
-
-              <Text style={styles.welcome}>Welcome {user.displayName}</Text>
-              <Pressable
-                style={[styles.button, styles.buttonClose]}
-                onPress={() => handleSignOut()}
-              >
-                <Text>Sign Out</Text>
-              </Pressable>
-
-              <View style={styles.lists}>
-                {lists && lists.length > 0 ? (
-                  <FlatList
-                    data={lists}
-                    keyExtractor={(item) => item.id}
-                    renderItem={({ item }) => <ListElement list={item} />}
-                    style={styles.listElement}
-                  />
-                ) : (
-                  <Text style={styles.noListsText}>No Lists Created Yet</Text>
-                )}
+                style={styles.profileImage}
+              />
+              <Text style={styles.heroEyebrow}>YOUR CORNER</Text>
+              <Text style={styles.heroTitle}>
+                {user.displayName || "Make this profile yours"}
+              </Text>
+              <Text style={styles.heroSubtitle}>{profileSubtitle}</Text>
+              <View style={styles.metaRow}>
+                <View style={styles.metaChip}>
+                  <Text style={styles.metaChipText}>{joinLabel}</Text>
+                </View>
+                <View style={styles.metaChip}>
+                  <Text style={styles.metaChipText}>{favoriteCount} in Favorites</Text>
+                </View>
               </View>
             </View>
-          </View>
+
+            <View style={styles.canvasDivider} />
+
+            <View style={styles.inlineSection}>
+              <View style={styles.sectionHeaderRow}>
+                <View style={styles.sectionHeaderText}>
+                  <Text style={styles.sectionEyebrow}>TASTE SHELF</Text>
+                  <Text style={styles.sectionTitle}>Top 5 Albums</Text>
+                  <Text style={styles.sectionSubtitle}>
+                    {favoritesList
+                      ? "Pulled from the first five albums in your Favorites list."
+                      : "Fill your Favorites list to start showing off your taste."}
+                  </Text>
+                </View>
+                <View style={styles.sectionPill}>
+                  <Text style={styles.sectionPillText}>{topAlbums.length}/5</Text>
+                </View>
+              </View>
+
+              {topAlbumsLoading ? (
+                <View style={styles.loadingShelfRow}>
+                  <ActivityIndicator size="small" color="#111827" />
+                  <Text style={styles.loadingShelfText}>Curating your shelf...</Text>
+                </View>
+              ) : null}
+
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.topAlbumsRail}
+              >
+                {topAlbumSlots.map((album, index) => (
+                  <TopAlbumCard
+                    key={album?.id || `top-album-slot-${index}`}
+                    album={album}
+                    index={index}
+                  />
+                ))}
+              </ScrollView>
+
+              {!profileDataLoading && !topAlbumsLoading && topAlbums.length === 0 ? (
+                <Text style={styles.emptyShelfText}>
+                  Your Favorites list is still blank. Add a few albums from the Lists tab and
+                  this profile shelf will start to feel like you.
+                </Text>
+              ) : null}
+            </View>
+
+            <View style={styles.canvasDivider} />
+
+            <View style={styles.inlineSection}>
+              <ProfileEntryCard
+                title="Liked Lists"
+                subtitle="Revisit the lists you gave a thumbs up."
+                countLabel={`${likedListsCount}`}
+                iconName="thumbs-up-outline"
+                onPress={openLikedLists}
+                integrated
+              />
+            </View>
+          </LinearGradient>
         </ScrollView>
       </SafeAreaView>
     </SafeAreaProvider>
   );
 };
-const HistoryTab = () => {
-  const navigation = useNavigation();
 
-  return <View></View>;
-};
+const HistoryTab = () => <View style={styles.container} />;
+
 const BacklogTab = () => {
   const navigation = useNavigation();
+  const [backlogAlbums, setBacklogAlbums] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  return <View></View>;
+  const loadBacklogAlbums = useCallback(async () => {
+    if (!auth.currentUser?.uid) {
+      setBacklogAlbums([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const response = await getListByUID(auth.currentUser.uid);
+      const userLists = Array.isArray(response) ? response : [];
+      const backlogList = findBacklogList(userLists);
+      const backlogAlbumIds = Array.isArray(backlogList?.albumIds)
+        ? backlogList.albumIds.filter(Boolean)
+        : Array.isArray(backlogList?.albumList)
+        ? backlogList.albumList.filter(Boolean)
+        : [];
+
+      if (backlogAlbumIds.length === 0) {
+        setBacklogAlbums([]);
+        return;
+      }
+
+      const results = await Promise.allSettled(
+        backlogAlbumIds.map((albumId) => getAlbum(albumId))
+      );
+      const nextAlbums = results.map((result, index) =>
+        toBacklogAlbumEntry(
+          backlogAlbumIds[index],
+          result.status === "fulfilled" ? result.value : null
+        )
+      );
+
+      setBacklogAlbums(nextAlbums);
+    } catch (error) {
+      console.error("Backlog fetch error:", error);
+      setBacklogAlbums([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      const parent = navigation.getParent();
+      parent?.setOptions({
+        headerTitle: "Backlog",
+        headerRight: () => null,
+      });
+
+      loadBacklogAlbums();
+    }, [loadBacklogAlbums, navigation])
+  );
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadBacklogAlbums().finally(() => {
+      setRefreshing(false);
+    });
+  }, [loadBacklogAlbums]);
+
+  return (
+    <SafeAreaProvider>
+      <SafeAreaView style={styles.container}>
+        {loading && !refreshing ? (
+          <View style={styles.loadingState}>
+            <ActivityIndicator size="large" />
+          </View>
+        ) : (
+          <FlatList
+            data={backlogAlbums}
+            keyExtractor={(item, index) =>
+              item?.id?.toString?.() || item?.spotifyId || `backlog-album-${index}`
+            }
+            renderItem={({ item }) => (
+              <BacklogAlbumRow
+                album={item}
+                onPress={() =>
+                  item?.albumData
+                    ? navigation.navigate("AlbumPage", { album: item.albumData })
+                    : null
+                }
+              />
+            )}
+            contentContainerStyle={
+              backlogAlbums.length === 0
+                ? styles.backlogEmptyContent
+                : styles.backlogListContent
+            }
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            }
+            ListEmptyComponent={
+              <View style={styles.backlogEmptyState}>
+                <Text style={styles.backlogEmptyTitle}>Your backlog is empty.</Text>
+                <Text style={styles.backlogEmptyBody}>
+                  Add albums to your backlog and they will show up here.
+                </Text>
+              </View>
+            }
+            showsVerticalScrollIndicator={false}
+          />
+        )}
+      </SafeAreaView>
+    </SafeAreaProvider>
+  );
 };
+
 const ListsTab = () => {
   const navigation = useNavigation();
   const [lists, setLists] = useState([]);
   const [listModalVisible, setListModalVisible] = useState(false);
   const [listName, setListName] = useState("");
   const [listDescription, setListDescription] = useState("");
-  const [refreshing, setRefreshing] = React.useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const visibleLists = useMemo(
+    () => lists.filter((list) => !isBacklogList(list)),
+    [lists]
+  );
 
-  const fetchUserLists = async () => {
+  const fetchUserLists = useCallback(async () => {
     if (!auth.currentUser) return;
     const response = await getListByUID(auth.currentUser.uid);
-    setLists(response);
-  };
+    setLists(Array.isArray(response) ? response : []);
+  }, []);
 
   useEffect(() => {
     if (auth.currentUser) {
       fetchUserLists();
     }
-  }, [auth.currentUser?.uid]);
+  }, [fetchUserLists]);
 
-  const onRefresh = React.useCallback(() => {
+  const onRefresh = useCallback(() => {
     setRefreshing(true);
-    fetchUserLists().then(() => {
+    fetchUserLists().finally(() => {
       setRefreshing(false);
     });
-  }, []);
+  }, [fetchUserLists]);
 
   const createNewList = async () => {
     if (!auth.currentUser) return;
@@ -205,9 +711,9 @@ const ListsTab = () => {
         headerRight: () => (
           <TouchableOpacity
             onPress={() => setListModalVisible(true)}
-            style={{ marginRight: 10 }}
+            style={styles.headerActionButton}
           >
-            <Ionicons name="add-outline" size={24} />
+            <Ionicons name="add-outline" size={24} color="#111827" />
           </TouchableOpacity>
         ),
         headerTitle: "My Lists",
@@ -220,11 +726,11 @@ const ListsTab = () => {
       <SafeAreaView style={styles.container}>
         <Modal
           animationType="slide"
-          transparent={true}
+          transparent
           visible={listModalVisible}
           onRequestClose={() => setListModalVisible(false)}
         >
-          <View style={styles.centeredView}>
+          <View style={styles.modalBackdrop}>
             <View style={styles.modalView}>
               <Text style={styles.modalText}>Create a List!</Text>
               <TextInput
@@ -240,34 +746,34 @@ const ListsTab = () => {
                 style={styles.input}
               />
               <Pressable
-                style={[styles.button, styles.buttonClose]}
+                style={[styles.modalButton, styles.modalPrimaryButton]}
                 onPress={createNewList}
               >
-                <Text style={styles.textStyle}>Create List</Text>
+                <Text style={styles.modalPrimaryButtonText}>Create List</Text>
               </Pressable>
               <Pressable
-                style={[styles.button, styles.buttonClose]}
+                style={[styles.modalButton, styles.modalSecondaryButton]}
                 onPress={() => {
                   setListModalVisible(false);
                   setListName("");
                   setListDescription("");
                 }}
               >
-                <Text style={styles.textStyle}>Cancel</Text>
+                <Text style={styles.modalSecondaryButtonText}>Cancel</Text>
               </Pressable>
             </View>
           </View>
         </Modal>
         <ScrollView
-          contentContainerStyle={styles.scrollView}
+          contentContainerStyle={styles.listScrollContent}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           }
         >
           <View style={styles.lists}>
-            {lists && lists.length > 0 ? (
+            {visibleLists.length > 0 ? (
               <FlatList
-                data={lists}
+                data={visibleLists}
                 keyExtractor={(item) => item.id}
                 renderItem={({ item }) => <ListElement list={item} />}
                 style={styles.listElement}
@@ -281,6 +787,7 @@ const ListsTab = () => {
     </SafeAreaProvider>
   );
 };
+
 const ProfilePage = () => {
   return (
     <Tab.Navigator>
@@ -291,93 +798,492 @@ const ProfilePage = () => {
     </Tab.Navigator>
   );
 };
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    borderWidth: 1,
-    alignContent: "center",
+    backgroundColor: "#ffffff",
+  },
+  loadingState: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  profileScreen: {
+    flex: 1,
+    backgroundColor: "#f3f4f6",
+  },
+  profileScrollContent: {
+    paddingTop: 0,
+    paddingBottom: 28,
+  },
+  headerActionButton: {
+    marginRight: 12,
+    padding: 4,
+  },
+  profileCanvas: {
+    overflow: "hidden",
+  },
+  profileHeroSection: {
+    alignItems: "center",
+    paddingHorizontal: 22,
+    paddingTop: 28,
+    paddingBottom: 24,
+  },
+  profileImage: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    borderWidth: 3,
+    borderColor: "#ffffff",
+    marginBottom: 18,
+    backgroundColor: "#d1d5db",
+  },
+  heroEyebrow: {
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 1.3,
+    color: "#6b7280",
+    marginBottom: 6,
+  },
+  heroTitle: {
+    fontSize: 27,
+    fontWeight: "800",
+    color: "#111827",
+  },
+  heroSubtitle: {
+    marginTop: 8,
+    fontSize: 15,
+    lineHeight: 22,
+    color: "#4b5563",
+    textAlign: "center",
+  },
+  metaRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginTop: 18,
     justifyContent: "center",
   },
-  image: {
-    width: "40%",
-    height: "20%",
-    borderRadius: 5,
-    padding: 10,
+  metaChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "rgba(17, 24, 39, 0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(17, 24, 39, 0.04)",
+  },
+  metaChipText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  canvasDivider: {
+    height: 1,
+    backgroundColor: "rgba(17, 24, 39, 0.08)",
+  },
+  inlineSection: {
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 20,
+  },
+  sectionHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12,
+  },
+  sectionHeaderText: {
+    flex: 1,
+  },
+  sectionEyebrow: {
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 1.4,
+    color: "#6b7280",
+    marginBottom: 6,
+  },
+  sectionTitle: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#111827",
+  },
+  sectionSubtitle: {
+    marginTop: 6,
+    fontSize: 14,
+    lineHeight: 20,
+    color: "#6b7280",
+  },
+  sectionPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "rgba(17, 24, 39, 0.06)",
+  },
+  sectionPillText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#111827",
+  },
+  loadingShelfRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 16,
+  },
+  loadingShelfText: {
+    color: "#6b7280",
+    fontSize: 13,
+  },
+  topAlbumsRail: {
+    gap: 10,
+    paddingTop: 18,
+    paddingBottom: 4,
+    paddingRight: 18,
+  },
+  topAlbumCard: {
+    width: 104,
+  },
+  topAlbumCover: {
+    width: 104,
+    height: 104,
+    borderRadius: 12,
+    backgroundColor: "#e5e7eb",
+    borderWidth: 1,
+    borderColor: "rgba(17, 24, 39, 0.08)",
+  },
+  topAlbumCoverFallback: {
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  topAlbumCoverFallbackText: {
+    fontSize: 34,
+    fontWeight: "800",
+    color: "#4b5563",
+  },
+  rankBadge: {
+    alignSelf: "flex-start",
+    marginTop: 9,
+    marginBottom: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: "rgba(17, 24, 39, 0.08)",
+  },
+  rankBadgeText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#111827",
+  },
+  topAlbumTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  topAlbumArtist: {
+    marginTop: 4,
+    fontSize: 12,
+    color: "#6b7280",
+  },
+  topAlbumPlaceholderCard: {
+    justifyContent: "flex-start",
+  },
+  topAlbumPlaceholderCover: {
+    width: 104,
+    height: 104,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: "#9ca3af",
+    backgroundColor: "rgba(17, 24, 39, 0.03)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  topAlbumPlaceholderTitle: {
+    marginTop: 10,
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  topAlbumPlaceholderSubtitle: {
+    marginTop: 4,
+    fontSize: 12,
+    color: "#6b7280",
+  },
+  emptyShelfText: {
+    marginTop: 14,
+    fontSize: 13,
+    lineHeight: 19,
+    color: "#6b7280",
+  },
+  profileEntryCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 22,
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 2,
+  },
+  profileEntryIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "#f3f4f6",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  profileEntryTextWrap: {
+    flex: 1,
+  },
+  profileEntryTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#111827",
+  },
+  profileEntrySubtitle: {
+    marginTop: 4,
+    fontSize: 13,
+    color: "#6b7280",
+  },
+  profileEntryMetaWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  profileEntryCount: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#111827",
+  },
+  profileEntryCardIntegrated: {
+    backgroundColor: "transparent",
+    borderRadius: 0,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 0,
+  },
+  profileEntryIconWrapIntegrated: {
+    backgroundColor: "rgba(17, 24, 39, 0.06)",
+  },
+  profileEntryTitleIntegrated: {
+    color: "#111827",
+  },
+  profileEntrySubtitleIntegrated: {
+    color: "#6b7280",
+  },
+  profileEntryCountIntegrated: {
+    color: "#111827",
+  },
+  sheetRoot: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  sheetBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(15, 23, 42, 0.38)",
+  },
+  sheetContainer: {
+    backgroundColor: "#ffffff",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    paddingBottom: 28,
+  },
+  sheetHandle: {
+    alignSelf: "center",
+    width: 40,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: "#d1d5db",
+    marginBottom: 16,
+  },
+  sheetTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#111827",
+  },
+  sheetSubtitle: {
+    marginTop: 6,
+    marginBottom: 18,
+    color: "#6b7280",
+  },
+  sheetActionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderRadius: 18,
+    backgroundColor: "#fff1f2",
+  },
+  sheetActionText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#9f1239",
+  },
+  sheetCancelButton: {
+    marginTop: 10,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  sheetCancelText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  modalBackdrop: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(15, 23, 42, 0.22)",
+    paddingHorizontal: 20,
   },
   modalView: {
-    margin: 20,
+    width: "100%",
     backgroundColor: "white",
-    borderRadius: 20,
-    padding: 40,
-
+    borderRadius: 22,
+    padding: 24,
     alignItems: "center",
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
       height: 2,
     },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
     elevation: 5,
   },
-  centeredView: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
   modalText: {
-    marginBottom: 15,
+    marginBottom: 8,
     fontSize: 18,
-    fontWeight: "600",
-  },
-  textStyle: {
-    color: "black",
+    fontWeight: "700",
+    color: "#111827",
   },
   input: {
-    backgroundColor: "white",
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    borderRadius: 10,
-    marginTop: 40,
-    width: 300,
-    background:
-      "linear-gradient(to right, rgba(255, 255, 255, 1), rgba(0, 0, 255, 0))",
+    width: "100%",
+    backgroundColor: "#f9fafb",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 14,
+    marginTop: 12,
   },
-  itemText: {
-    fontSize: 16,
+  modalButton: {
+    width: "100%",
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: "center",
+    marginTop: 14,
   },
-  item: {
-    padding: 10,
-    borderBottomWidth: 1,
-    borderLeftWidth: 1,
-    borderRadius: 2,
+  modalPrimaryButton: {
+    backgroundColor: "#111827",
   },
-  button: {
-    padding: 10,
-    width: "50%",
+  modalPrimaryButtonText: {
+    color: "#ffffff",
+    fontWeight: "700",
+  },
+  modalSecondaryButton: {
+    backgroundColor: "#f3f4f6",
+  },
+  modalSecondaryButtonText: {
+    color: "#111827",
+    fontWeight: "700",
+  },
+  listScrollContent: {
+    flexGrow: 1,
+    paddingVertical: 12,
+  },
+  backlogListContent: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 24,
+  },
+  backlogEmptyContent: {
+    flexGrow: 1,
     justifyContent: "center",
     alignItems: "center",
-    borderWidth: 1,
+    paddingHorizontal: 28,
+    paddingBottom: 48,
+  },
+  backlogEmptyState: {
+    alignItems: "center",
+  },
+  backlogEmptyTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  backlogEmptyBody: {
+    marginTop: 8,
+    fontSize: 14,
+    lineHeight: 20,
+    color: "#6b7280",
+    textAlign: "center",
+  },
+  backlogAlbumRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: "purple",
-    borderTopColor: "black",
+    borderBottomColor: "#e5e7eb",
+  },
+  backlogAlbumCover: {
+    width: 68,
+    height: 68,
+    borderRadius: 8,
+    backgroundColor: "#e5e7eb",
+  },
+  backlogAlbumCoverFallback: {
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  backlogAlbumCoverFallbackText: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#4b5563",
+  },
+  backlogAlbumContent: {
+    flex: 1,
+    marginLeft: 12,
+    marginRight: 12,
+  },
+  backlogAlbumTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  backlogAlbumArtist: {
+    marginTop: 4,
+    fontSize: 13,
+    color: "#4b5563",
+  },
+  backlogAlbumMeta: {
+    marginTop: 6,
+    fontSize: 12,
+    color: "#9ca3af",
   },
   lists: {
-    width: "90%",
-
-    borderWidth: 1,
+    width: "100%",
+    paddingHorizontal: 16,
   },
-  scrollView: {
-    flexGrow: 1,
-    alignContent: "center",
-    justifyContent: "center",
+  listElement: {
+    width: "100%",
   },
-  profileBody: {
-    flex: 1,
-    alignItems: "center",
-  },
-  welcome: {
-    padding: 10,
+  noListsText: {
+    textAlign: "center",
+    color: "#6b7280",
+    marginTop: 30,
   },
 });
 

@@ -175,6 +175,208 @@ export const getListByUID = async (uid) => {
     console.log("This be throwing an error!");
   }
 };
+
+export const getListById = async (listId) => {
+  if (!listId) {
+    return null;
+  }
+
+  try {
+    const requestUrl = `${API_BASE_URL}/lists/detail/${encodeURIComponent(listId)}`;
+    const response = await fetch(requestUrl, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+    });
+    const json = await parseJsonSafely(response, "GET /lists/detail/:id");
+
+    if (!response.ok || !json) {
+      console.error("[getListById] request failed", {
+        requestUrl,
+        status: response.status,
+        body: json,
+      });
+      return null;
+    }
+
+    return await jsonToLists(json);
+  } catch (error) {
+    console.error("getListById error:", error);
+    return null;
+  }
+};
+
+const resolveViewerId = async (currentUid) => {
+  if (!currentUid) {
+    return null;
+  }
+
+  const viewerId = await resolveBackendUserId(currentUid);
+  if (viewerId) {
+    return viewerId;
+  }
+
+  return currentUid;
+};
+
+export const likeList = async (currentUid, listId) => {
+  if (!currentUid || !listId) {
+    throw new Error("currentUid and listId are required");
+  }
+
+  const viewerId = await resolveViewerId(currentUid);
+  if (!viewerId) {
+    throw new Error("Unable to resolve current user id");
+  }
+
+  const requestUrl = `${API_BASE_URL}/lists/${encodeURIComponent(
+    listId
+  )}/like?viewerId=${encodeURIComponent(viewerId)}`;
+
+  const response = await fetch(requestUrl, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+  });
+  const data = await parseJsonSafely(response, "POST /lists/:id/like");
+
+  if (!response.ok) {
+    console.error("[likeList] request failed", {
+      requestUrl,
+      status: response.status,
+      body: data,
+    });
+    throw new Error(data?.message || "Failed to like list");
+  }
+
+  return data;
+};
+
+export const unlikeList = async (currentUid, listId) => {
+  if (!currentUid || !listId) {
+    throw new Error("currentUid and listId are required");
+  }
+
+  const viewerId = await resolveViewerId(currentUid);
+  if (!viewerId) {
+    throw new Error("Unable to resolve current user id");
+  }
+
+  const requestUrl = `${API_BASE_URL}/lists/${encodeURIComponent(
+    listId
+  )}/like?viewerId=${encodeURIComponent(viewerId)}`;
+
+  const response = await fetch(requestUrl, {
+    method: "DELETE",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+  });
+  const data = await parseJsonSafely(response, "DELETE /lists/:id/like");
+
+  if (!response.ok) {
+    console.error("[unlikeList] request failed", {
+      requestUrl,
+      status: response.status,
+      body: data,
+    });
+    throw new Error(data?.message || "Failed to unlike list");
+  }
+
+  return data;
+};
+
+export const getListLikeState = async (currentUid, listId) => {
+  if (!currentUid || !listId) {
+    return { liked: false, likesCount: 0 };
+  }
+
+  const viewerId = await resolveViewerId(currentUid);
+  if (!viewerId) {
+    return { liked: false, likesCount: 0 };
+  }
+
+  const requestUrl = `${API_BASE_URL}/lists/${encodeURIComponent(
+    listId
+  )}/is-liked?viewerId=${encodeURIComponent(viewerId)}`;
+
+  const response = await fetch(requestUrl, {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+  });
+  const data = await parseJsonSafely(response, "GET /lists/:id/is-liked");
+
+  if (!response.ok) {
+    console.error("[getListLikeState] request failed", {
+      requestUrl,
+      status: response.status,
+      body: data,
+    });
+    throw new Error(data?.message || "Failed to get like state");
+  }
+
+  return data || { liked: false, likesCount: 0 };
+};
+
+export const getMyLikedLists = async (
+  currentUid,
+  { offset = 0, limit = 50 } = {}
+) => {
+  if (!currentUid) {
+    return { data: [], hasMore: false, totalCount: 0 };
+  }
+
+  const viewerId = await resolveViewerId(currentUid);
+  if (!viewerId) {
+    return { data: [], hasMore: false, totalCount: 0 };
+  }
+
+  try {
+    const searchParams = new URLSearchParams({
+      viewerId,
+      offset: String(offset),
+      limit: String(limit),
+    });
+    const requestUrl = `${API_BASE_URL}/lists/me/liked?${searchParams.toString()}`;
+    const response = await fetch(requestUrl, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+    });
+    const json = await parseJsonSafely(response, "GET /lists/me/liked");
+
+    if (!response.ok || !json) {
+      console.error("[getMyLikedLists] request failed", {
+        requestUrl,
+        status: response.status,
+        body: json,
+      });
+      return { data: [], hasMore: false, totalCount: 0 };
+    }
+
+    const likedLists = Array.isArray(json?.data) ? json.data : [];
+    const mappedLists = await Promise.all(likedLists.map(jsonToLists));
+
+    return {
+      data: mappedLists,
+      hasMore: Boolean(json?.hasMore),
+      totalCount: Number(json?.totalCount || 0),
+    };
+  } catch (error) {
+    console.error("getMyLikedLists error:", error);
+    return { data: [], hasMore: false, totalCount: 0 };
+  }
+};
 export const patchAlbumList = async (list, id) => {
   //get all albums from list of listId
   //console.log("This is the list ID being passed " + listId);
@@ -228,6 +430,7 @@ export const postList = async (uid, description, name) => {
       title: name || "Untitled List",
       slug,
       listType: "custom",
+      isSystem: false,
       visibility: "public",
       description: description || null,
     };
@@ -261,6 +464,7 @@ export const postListWithType = async (uid, type) => {
   try {
     const user = await getFullUserByUid(uid);
     const ownerId = user?.id ?? uid;
+    const normalizedType = type?.toLowerCase?.() || "";
 
     const listTypeMap = {
       backlog: "custom",
@@ -270,12 +474,12 @@ export const postListWithType = async (uid, type) => {
       year: "year",
       theme: "theme",
     };
-    const listType = listTypeMap[type?.toLowerCase()] || "custom";
+    const listType = listTypeMap[normalizedType] || "custom";
 
     const slug =
-      type === "backlog"
+      normalizedType === "backlog"
         ? "backlog"
-        : type === "favorite" || type === "favorites"
+        : normalizedType === "favorite" || normalizedType === "favorites"
         ? "favorites"
         : `list-${Date.now()}`;
 
@@ -284,7 +488,7 @@ export const postListWithType = async (uid, type) => {
       favorite: "Favorites",
       favorites: "Favorites",
     };
-    const title = titleMap[type?.toLowerCase()] || "Untitled List";
+    const title = titleMap[normalizedType] || "Untitled List";
 
     const body = {
       ownerId,
@@ -292,6 +496,10 @@ export const postListWithType = async (uid, type) => {
       title,
       slug,
       listType,
+      isSystem:
+        normalizedType === "backlog" ||
+        normalizedType === "favorite" ||
+        normalizedType === "favorites",
       visibility: "public",
       description: null,
     };

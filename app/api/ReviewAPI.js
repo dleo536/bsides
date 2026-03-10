@@ -21,6 +21,12 @@ const parseJsonSafely = async (response, label) => {
   }
 };
 
+const isUuid = (value) =>
+  typeof value === "string" &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value
+  );
+
 export const getAllReviews = async (limit = 5, offset = 0, viewerUid = null) => {
   const fetchData = {
     method: "GET",
@@ -88,7 +94,42 @@ export const postReview = async (userId, reviewData) => {
       userId: userId,
       ...reviewData
     };
-    console.log("createDto: ", JSON.stringify(createDto));
+
+    const identifierCandidates = [userId, createDto.userId, createDto.firebaseUid]
+      .filter((value) => typeof value === "string")
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+
+    let resolvedBackendUserId = null;
+    let resolvedFirebaseUid = null;
+
+    for (const identifier of identifierCandidates) {
+      if (isUuid(identifier)) {
+        resolvedBackendUserId = resolvedBackendUserId || identifier;
+        continue;
+      }
+
+      resolvedFirebaseUid = resolvedFirebaseUid || identifier;
+      if (!resolvedBackendUserId) {
+        resolvedBackendUserId = await resolveBackendUserId(identifier);
+      }
+    }
+
+    if (!resolvedBackendUserId) {
+      throw new Error("Unable to resolve backend user id for review creation");
+    }
+
+    createDto.userId = resolvedBackendUserId;
+    if (!createDto.firebaseUid && resolvedFirebaseUid) {
+      createDto.firebaseUid = resolvedFirebaseUid;
+    }
+
+    console.log("[postReview] resolved identifiers", {
+      userId: createDto.userId,
+      hasFirebaseUid: Boolean(createDto.firebaseUid),
+      releaseGroupMbId: createDto.releaseGroupMbId,
+    });
+
     const response = await fetch(`${API_BASE_URL}/reviews`, {
       method: "POST",
       headers: {
@@ -97,13 +138,16 @@ export const postReview = async (userId, reviewData) => {
       },
       body: JSON.stringify(createDto),
     });
-    const data = await response.json();
+    const data = await parseJsonSafely(response, "POST /reviews");
 
     if (response.ok) {
       console.log("Success:", data);
       return data;
     } else {
-      console.error("Error:", data);
+      console.error("[postReview] request failed", {
+        status: response.status,
+        body: data,
+      });
       return { error: data };
     }
   } catch (error) {

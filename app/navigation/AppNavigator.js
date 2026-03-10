@@ -1,39 +1,28 @@
-import { View, Text, TouchableOpacity } from "react-native";
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createStackNavigator } from "@react-navigation/stack";
 import HomePage from "../screens/HomePage";
 import SearchPage from "../screens/SearchPage";
-import NewsPage from "../screens/NewsPage";
 import ProfilePage from "../screens/ProfilePage";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Ionicons } from "@expo/vector-icons";
 import { auth } from "../config/firebase";
-import { getAuth } from "firebase/auth";
 import AlbumPage from "../screens/AlbumPage";
 import ArtistPage from "../screens/ArtistPage";
-import { createMaterialTopTabNavigator } from "@react-navigation/material-top-tabs";
-import { NavigationContainer } from "@react-navigation/native";
 import MusicianPage from "../screens/MusicianPage";
 import UserPage from "../screens/UserPage";
 import ReviewPage from "../screens/ReviewPage";
 import ListPage from "../screens/ListPage";
+import LikedListsPage from "../screens/LikedListsPage";
+import YearPicker from "../screens/YearPicker";
+import YearResults from "../screens/YearResults";
+import CountryPicker from "../screens/CountryPicker";
+import CountryResults from "../screens/CountryResults";
+import NewReleasesResults from "../screens/NewReleasesResults";
 const Tab = createBottomTabNavigator();
-const TopTab = createMaterialTopTabNavigator();
 
 const Stack = createStackNavigator();
 const AppNavigator = () => {
-  const [username, setUsername] = useState("");
-  useEffect(() => {
-    getUsername();
-  }, []);
-  const getUsername = async () => {
-    const user = auth.currentUser;
-    if (user) {
-      const username = auth.currentUser?.displayName;
-      setUsername(username);
-    }
-  };
   return (
     <Tab.Navigator>
       <Tab.Screen
@@ -65,7 +54,7 @@ const AppNavigator = () => {
       />
       <Tab.Screen
         name="ProfilePage"
-        component={ProfilePage}
+        component={ProfileStack}
         options={{
           tabBarIcon: () => {
             return (
@@ -77,7 +66,7 @@ const AppNavigator = () => {
             );
           },
           tabBarLabel: "Me",
-          headerTitle: username, // top header text
+          headerShown: false,
 
           // headerRight: () => (
           //   <TouchableOpacity onPress={() => console.log("settings")}>
@@ -141,6 +130,23 @@ function SearchStack() {
           headerBackTitleStyle: { fontSize: 10 },
         }}
       />
+      <Stack.Screen name="YearPicker" component={YearPicker} options={{ title: "Pick a Year" }} />
+      <Stack.Screen name="YearResults" component={YearResults} options={{ title: "Year" }} />
+      <Stack.Screen
+        name="CountryPicker"
+        component={CountryPicker}
+        options={{ title: "Pick a Country" }}
+      />
+      <Stack.Screen
+        name="CountryResults"
+        component={CountryResults}
+        options={{ title: "New in Country" }}
+      />
+      <Stack.Screen
+        name="NewReleasesResults"
+        component={NewReleasesResults}
+        options={{ title: "New Releases" }}
+      />
     </Stack.Navigator>
   );
 }
@@ -177,6 +183,46 @@ function HomeStack() {
       <Stack.Screen
         name="ArtistPage"
         component={ArtistPage}
+        options={{
+          headerBackTitle: "Back",
+          headerBackTitleStyle: { fontSize: 10 },
+        }}
+      />
+    </Stack.Navigator>
+  );
+}
+
+function ProfileStack() {
+  return (
+    <Stack.Navigator>
+      <Stack.Screen
+        name="ProfileHome"
+        component={ProfilePage}
+        options={{
+          headerBackTitle: "Back",
+          headerBackTitleStyle: { fontSize: 10 },
+          title: auth.currentUser?.displayName || "Profile",
+        }}
+      />
+      <Stack.Screen
+        name="LikedListsPage"
+        component={LikedListsPage}
+        options={{
+          title: "Liked Lists",
+          headerBackTitle: "Back",
+          headerBackTitleStyle: { fontSize: 10 },
+        }}
+      />
+      <Stack.Screen
+        name="ListPage"
+        component={ListPage}
+        options={{
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="AlbumPage"
+        component={AlbumPage}
         options={{
           headerBackTitle: "Back",
           headerBackTitleStyle: { fontSize: 10 },

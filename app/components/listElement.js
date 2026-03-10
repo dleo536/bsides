@@ -2,36 +2,43 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  FlatList,
   Image,
 } from "react-native";
-import React, { useEffect, useState } from "react";
-import { Card, Title, Paragraph, IconButton } from "react-native-paper";
+import React, { useEffect, useMemo, useState } from "react";
 import { getUsernameByUID } from "../api/UserAPI";
-import { getAlbum, getAlbumCover } from "../api/SpotifyAPI";
+import { getAlbumCover } from "../api/SpotifyAPI";
 
 export default function ListElement({ list }) {
   const [username, setUsername] = useState();
   const [albumCovers, setAlbumCovers] = useState([]);
+  const previewAlbumIds = useMemo(
+    () => (Array.isArray(list?.albumList) ? list.albumList.slice(0, 4) : []),
+    [list?.albumList]
+  );
+  const previewAlbumIdsKey = previewAlbumIds.join("|");
 
-  console.log("ListElement album covers uris: ", albumCovers[0]);
   useEffect(() => {
     const fetchAlbumCovers = async () => {
-      if (!list?.albumList) return;
+      if (previewAlbumIds.length === 0) {
+        setAlbumCovers([]);
+        return;
+      }
 
-      const covers = await Promise.all(
-        list.albumList.map((album) => getAlbumCover(album))
+      const coverResults = await Promise.allSettled(
+        previewAlbumIds.map((album) => getAlbumCover(album))
+      );
+      const covers = coverResults.map((result) =>
+        result.status === "fulfilled" ? result.value : null
       );
       setAlbumCovers(covers);
-      console.log("ListElement album covers uris: ", albumCovers[0]);
     };
-    getUsernameByUID(list.uid).then((username) => {
-      setUsername(username);
-    });
+    if (list?.uid || list?.ownerId) {
+      getUsernameByUID(list.uid || list.ownerId).then((resolvedUsername) => {
+        setUsername(resolvedUsername);
+      });
+    }
     fetchAlbumCovers();
-  }, [list]);
+  }, [list, previewAlbumIdsKey]);
 
   return (
     <View style={styles.content}>
@@ -40,9 +47,21 @@ export default function ListElement({ list }) {
         <Text style={styles.artist}>{username}</Text>
       </View>
       <View style={styles.imageListContainer}>
-        {albumCovers.map((url, index) => (
-          <Image key={index} source={{ uri: url }} style={styles.image} />
-        ))}
+        {previewAlbumIds.length === 0 ? (
+          <View style={styles.emptyPreviewCard}>
+            <Text style={styles.emptyPreviewText}>No albums yet</Text>
+          </View>
+        ) : (
+          albumCovers.map((url, index) =>
+            url ? (
+              <Image key={index} source={{ uri: url }} style={styles.image} />
+            ) : (
+              <View key={index} style={[styles.image, styles.imageFallback]}>
+                <Text style={styles.imageFallbackText}>NO COVER</Text>
+              </View>
+            )
+          )
+        )}
       </View>
       <View style={styles.reviewData}>
         <View style={styles.columnContainer}>
@@ -71,6 +90,16 @@ const styles = StyleSheet.create({
     height: 100,
     padding: 5,
     borderRadius: 2,
+  },
+  imageFallback: {
+    backgroundColor: "#e5e7eb",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  imageFallbackText: {
+    fontSize: 9,
+    fontWeight: "700",
+    color: "#6b7280",
   },
   card: {
     margin: 0,
@@ -127,6 +156,17 @@ const styles = StyleSheet.create({
   imageListContainer: {
     flex: 1,
     flexDirection: "row",
+  },
+  emptyPreviewCard: {
+    width: "100%",
+    paddingVertical: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#f3f4f6",
+  },
+  emptyPreviewText: {
+    color: "#6b7280",
+    fontWeight: "600",
   },
   header: {
     flexDirection: "row",

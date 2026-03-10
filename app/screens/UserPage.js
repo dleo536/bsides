@@ -34,10 +34,12 @@ import { getAlbumList } from "../api/SpotifyAPI";
 import ListElement from "../components/listElement";
 import { getReviewsByUID } from "../api/ReviewAPI";
 import ReviewElement from "../components/reviewElement";
+import defaultProfileImage from "../../assets/defaultProfilePicture.png";
 import {
   followUser,
   getFollowState,
-  getProfileImage as getProfileImageByUid,
+  getProfileImageForUser,
+  getUserByIdentifier,
   unfollowUser,
 } from "../api/UserAPI";
 const UserPage = () => {
@@ -47,6 +49,7 @@ const UserPage = () => {
   const route = useRoute();
   const { user } = route.params; // 👈 user object passed in
 
+  const [profileUser, setProfileUser] = useState(user);
   const [activeTab, setActiveTab] = useState("lists");
   const [lists, setLists] = useState([]);
   const [reviews, setReviews] = useState([]);
@@ -57,13 +60,44 @@ const UserPage = () => {
   const [followError, setFollowError] = useState("");
 
   const currentUid = auth?.currentUser?.uid;
-  const profileUserIdentifier = user?.id || user?.oauthId || user?.uid;
-  const profileFirebaseUid = user?.oauthId || user?.uid || null;
+  const routeUserIdentifier = user?.id || user?.oauthId || user?.uid;
+  const profileUserIdentifier =
+    profileUser?.id || profileUser?.oauthId || profileUser?.uid || routeUserIdentifier;
   const isOwnProfile =
     !!currentUid &&
-    (currentUid === user?.oauthId ||
-      currentUid === user?.uid ||
+    (currentUid === profileUser?.oauthId ||
+      currentUid === profileUser?.uid ||
       currentUid === profileUserIdentifier);
+  const profileDisplayName =
+    profileUser?.displayName || profileUser?.name || profileUser?.username || "User";
+  const profileUsername = profileUser?.username || user?.username || "";
+  const followersCount = profileUser?.followersCount ?? 0;
+  const followingCount = profileUser?.followingCount ?? 0;
+
+  useEffect(() => {
+    setProfileUser(user);
+  }, [user]);
+
+  useEffect(() => {
+    if (!routeUserIdentifier) return;
+
+    let mounted = true;
+    const loadProfileUser = async () => {
+      const latestUser = await getUserByIdentifier(routeUserIdentifier);
+      if (mounted && latestUser) {
+        setProfileUser((currentUser) => ({
+          ...(currentUser || {}),
+          ...latestUser,
+        }));
+      }
+    };
+
+    loadProfileUser();
+
+    return () => {
+      mounted = false;
+    };
+  }, [routeUserIdentifier]);
 
   useEffect(() => {
     if (activeTab === "lists") {
@@ -71,15 +105,13 @@ const UserPage = () => {
     } else if (activeTab === "reviews") {
       getReviews();
     }
-  }, [activeTab]);
+  }, [activeTab, profileUserIdentifier]);
   useEffect(() => {
-    if (!profileFirebaseUid) return;
-
     let mounted = true;
     const loadProfileImage = async () => {
-      const image = await getProfileImageByUid(profileFirebaseUid);
-      if (mounted && image) {
-        setProfileImage(image);
+      const image = await getProfileImageForUser(profileUser);
+      if (mounted) {
+        setProfileImage(image || "");
       }
     };
 
@@ -88,7 +120,13 @@ const UserPage = () => {
     return () => {
       mounted = false;
     };
-  }, [profileFirebaseUid]);
+  }, [
+    profileUser?.id,
+    profileUser?.oauthId,
+    profileUser?.uid,
+    profileUser?.avatarUrl,
+    profileUser?.photoURL,
+  ]);
 
   useEffect(() => {
     if (!currentUid || !profileUserIdentifier || isOwnProfile) {
@@ -143,6 +181,21 @@ const UserPage = () => {
     setReviews(Array.isArray(userReviews) ? userReviews : []);
   };
 
+  const refreshProfileUser = async () => {
+    if (!profileUserIdentifier) {
+      return null;
+    }
+
+    const latestUser = await getUserByIdentifier(profileUserIdentifier);
+    if (latestUser) {
+      setProfileUser((currentUser) => ({
+        ...(currentUser || {}),
+        ...latestUser,
+      }));
+    }
+    return latestUser;
+  };
+
   // --- Follow handler ---
   const handleFollowPress = async () => {
     if (!currentUid) {
@@ -166,6 +219,8 @@ const UserPage = () => {
         const response = await followUser(currentUid, profileUserIdentifier);
         setIsFollowing(Boolean(response?.following));
       }
+
+      await refreshProfileUser();
     } catch (e) {
       console.error("handleFollowPress error:", e);
       setFollowError("Could not update follow status. Please try again.");
@@ -181,14 +236,12 @@ const UserPage = () => {
         {/* --- Top Profile Section --- */}
         <View style={styles.profileHeader}>
           <Image
-            source={{
-              uri: profileImage || "https://via.placeholder.com/150",
-            }}
+            source={profileImage ? { uri: profileImage } : defaultProfileImage}
             style={styles.profileImage}
           />
           <View style={styles.profileInfo}>
-            <Text style={styles.nameText}>{user.name}</Text>
-            <Text style={styles.usernameText}>@{user.username}</Text>
+            <Text style={styles.nameText}>{profileDisplayName}</Text>
+            <Text style={styles.usernameText}>@{profileUsername}</Text>
           </View>
           {/* --- Follow Button --- */}
           {!isOwnProfile && (
@@ -223,11 +276,11 @@ const UserPage = () => {
         {/* --- Stats Section --- */}
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{0}</Text>
+            <Text style={styles.statNumber}>{followersCount}</Text>
             <Text style={styles.statLabel}>Followers</Text>
           </View>
           <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{0}</Text>
+            <Text style={styles.statNumber}>{followingCount}</Text>
             <Text style={styles.statLabel}>Following</Text>
           </View>
         </View>
