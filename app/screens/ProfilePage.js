@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Dimensions,
   FlatList,
   Image,
   Modal,
@@ -22,11 +23,16 @@ import { createMaterialTopTabNavigator } from "@react-navigation/material-top-ta
 import defaultProfileImage from "../../assets/defaultProfilePicture.png";
 import { auth } from "../config/firebase";
 import { getListByUID, getMyLikedLists, postList } from "../api/ListAPI";
+import { getReviewsByUID } from "../api/ReviewAPI";
 import { getAlbum } from "../api/SpotifyAPI";
 import ListElement from "../components/listElement";
 
 const Tab = createMaterialTopTabNavigator();
 const TOP_ALBUM_LIMIT = 5;
+const BACKLOG_GRID_GAP = 10;
+const BACKLOG_GRID_PADDING = 16;
+const BACKLOG_TILE_SIZE =
+  (Dimensions.get("window").width - BACKLOG_GRID_PADDING * 2 - BACKLOG_GRID_GAP * 3) / 4;
 
 const normalizeListValue = (value) =>
   typeof value === "string" ? value.trim().toLowerCase() : "";
@@ -78,6 +84,23 @@ const formatJoinLabel = (creationTime) => {
   }
 
   return `Joined ${date.getFullYear()}`;
+};
+
+const formatHistoryDate = (value) => {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return date.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
 };
 
 const ProfileActionSheet = ({ visible, onClose, onSignOut, user }) => (
@@ -171,9 +194,9 @@ const toBacklogAlbumEntry = (albumId, albumData) => {
   };
 };
 
-const BacklogAlbumRow = ({ album, onPress }) => (
+const BacklogAlbumTile = ({ album, onPress }) => (
   <TouchableOpacity
-    style={styles.backlogAlbumRow}
+    style={styles.backlogAlbumTile}
     onPress={onPress}
     disabled={!album?.albumData}
     activeOpacity={album?.albumData ? 0.84 : 1}
@@ -187,7 +210,7 @@ const BacklogAlbumRow = ({ album, onPress }) => (
         </Text>
       </View>
     )}
-    <View style={styles.backlogAlbumContent}>
+    <View style={styles.backlogAlbumMetaWrap}>
       <Text style={styles.backlogAlbumTitle} numberOfLines={1}>
         {album?.title || "Untitled Album"}
       </Text>
@@ -198,9 +221,60 @@ const BacklogAlbumRow = ({ album, onPress }) => (
         <Text style={styles.backlogAlbumMeta}>{album.releaseYear}</Text>
       ) : null}
     </View>
-    <Ionicons name="chevron-forward" size={18} color="#9ca3af" />
   </TouchableOpacity>
 );
+
+const HistoryReviewCard = ({ review }) => {
+  const createdLabel = formatHistoryDate(review?.createdAt || review?.date);
+  const ratingLabel =
+    review?.ratingHalfSteps || review?.ratingHalfSteps === 0
+      ? `${(Number(review.ratingHalfSteps) / 2).toFixed(1)}/5`
+      : review?.rating
+      ? `${review.rating}/5`
+      : null;
+
+  return (
+    <View style={styles.historyReviewCard}>
+      <View style={styles.historyReviewRow}>
+        {review?.albumCover ? (
+          <Image source={{ uri: review.albumCover }} style={styles.historyReviewCover} />
+        ) : (
+          <View style={[styles.historyReviewCover, styles.historyReviewCoverFallback]}>
+            <Text style={styles.historyReviewCoverFallbackText}>
+              {(review?.albumName || "A").slice(0, 1).toUpperCase()}
+            </Text>
+          </View>
+        )}
+
+        <View style={styles.historyReviewContent}>
+          <Text style={styles.historyReviewAlbum} numberOfLines={1}>
+            {review?.albumName || "Unknown Album"}
+          </Text>
+          <Text style={styles.historyReviewArtist} numberOfLines={1}>
+            {review?.artistName || "Unknown Artist"}
+          </Text>
+
+          <View style={styles.historyMetaRow}>
+            {ratingLabel ? (
+              <View style={styles.historyMetaPill}>
+                <Text style={styles.historyMetaPillText}>{ratingLabel}</Text>
+              </View>
+            ) : null}
+            {createdLabel ? (
+              <Text style={styles.historyReviewDate}>Reviewed {createdLabel}</Text>
+            ) : null}
+          </View>
+
+          {review?.reviewBody ? (
+            <Text style={styles.historyReviewBody} numberOfLines={4}>
+              {review.reviewBody}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+    </View>
+  );
+};
 
 const ProfileEntryCard = ({
   title,
@@ -280,11 +354,6 @@ const ProfileTab = () => {
     () => formatJoinLabel(user?.metadata?.creationTime),
     [user?.metadata?.creationTime]
   );
-  const profileSubtitle = profileDataLoading
-    ? "Loading your taste shelf..."
-    : favoriteCount
-    ? `${favoriteCount} album${favoriteCount === 1 ? "" : "s"} tucked into Favorites`
-    : "Start shaping your profile shelf with the albums you love most.";
 
   const loadTopAlbums = useCallback(async (resolvedLists) => {
     const nextFavoritesList = findFavoritesList(resolvedLists);
@@ -466,11 +535,9 @@ const ProfileTab = () => {
                 source={user.photoURL ? { uri: user.photoURL } : defaultProfileImage}
                 style={styles.profileImage}
               />
-              <Text style={styles.heroEyebrow}>YOUR CORNER</Text>
               <Text style={styles.heroTitle}>
                 {user.displayName || "Make this profile yours"}
               </Text>
-              <Text style={styles.heroSubtitle}>{profileSubtitle}</Text>
               <View style={styles.metaRow}>
                 <View style={styles.metaChip}>
                   <Text style={styles.metaChipText}>{joinLabel}</Text>
@@ -547,17 +614,110 @@ const ProfileTab = () => {
   );
 };
 
-const HistoryTab = () => <View style={styles.container} />;
+const HistoryTab = () => {
+  const navigation = useNavigation();
+  const [reviews, setReviews] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadReviews = useCallback(async () => {
+    if (!auth.currentUser?.uid) {
+      setReviews([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const response = await getReviewsByUID(auth.currentUser.uid);
+      setReviews(Array.isArray(response) ? response : []);
+    } catch (error) {
+      console.error("History fetch error:", error);
+      setReviews([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      const parent = navigation.getParent();
+      parent?.setOptions({
+        headerTitle: "History",
+        headerRight: () => null,
+      });
+
+      loadReviews();
+    }, [loadReviews, navigation])
+  );
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadReviews().finally(() => {
+      setRefreshing(false);
+    });
+  }, [loadReviews]);
+
+  return (
+    <SafeAreaProvider>
+      <SafeAreaView style={styles.container}>
+        {loading && !refreshing ? (
+          <View style={styles.loadingState}>
+            <ActivityIndicator size="large" />
+          </View>
+        ) : (
+          <FlatList
+            data={reviews}
+            keyExtractor={(item, index) =>
+              item?.id?.toString?.() || `history-review-${index}`
+            }
+            renderItem={({ item }) => <HistoryReviewCard review={item} />}
+            contentContainerStyle={
+              reviews.length === 0 ? styles.historyEmptyContent : styles.historyListContent
+            }
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            }
+            ListHeaderComponent={
+              reviews.length > 0 ? (
+                <View style={styles.historyHeader}>
+                  <Text style={styles.historyHeaderTitle}>Review History</Text>
+                  <View style={styles.historyCountPill}>
+                    <Text style={styles.historyCountPillText}>
+                      {reviews.length} review{reviews.length === 1 ? "" : "s"}
+                    </Text>
+                  </View>
+                </View>
+              ) : null
+            }
+            ListEmptyComponent={
+              <View style={styles.historyEmptyState}>
+                <Text style={styles.historyEmptyTitle}>No reviews yet.</Text>
+                <Text style={styles.historyEmptyBody}>
+                  Reviews you write will show up here with the date they were created.
+                </Text>
+              </View>
+            }
+            showsVerticalScrollIndicator={false}
+          />
+        )}
+      </SafeAreaView>
+    </SafeAreaProvider>
+  );
+};
 
 const BacklogTab = () => {
   const navigation = useNavigation();
   const [backlogAlbums, setBacklogAlbums] = useState([]);
+  const [backlogItemCount, setBacklogItemCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const loadBacklogAlbums = useCallback(async () => {
     if (!auth.currentUser?.uid) {
       setBacklogAlbums([]);
+      setBacklogItemCount(0);
       setLoading(false);
       return;
     }
@@ -573,6 +733,7 @@ const BacklogTab = () => {
         : Array.isArray(backlogList?.albumList)
         ? backlogList.albumList.filter(Boolean)
         : [];
+      setBacklogItemCount(backlogAlbumIds.length);
 
       if (backlogAlbumIds.length === 0) {
         setBacklogAlbums([]);
@@ -593,6 +754,7 @@ const BacklogTab = () => {
     } catch (error) {
       console.error("Backlog fetch error:", error);
       setBacklogAlbums([]);
+      setBacklogItemCount(0);
     } finally {
       setLoading(false);
     }
@@ -627,11 +789,12 @@ const BacklogTab = () => {
         ) : (
           <FlatList
             data={backlogAlbums}
+            numColumns={4}
             keyExtractor={(item, index) =>
               item?.id?.toString?.() || item?.spotifyId || `backlog-album-${index}`
             }
             renderItem={({ item }) => (
-              <BacklogAlbumRow
+              <BacklogAlbumTile
                 album={item}
                 onPress={() =>
                   item?.albumData
@@ -640,13 +803,20 @@ const BacklogTab = () => {
                 }
               />
             )}
-            contentContainerStyle={
-              backlogAlbums.length === 0
-                ? styles.backlogEmptyContent
-                : styles.backlogListContent
-            }
+            contentContainerStyle={styles.backlogGridContent}
+            columnWrapperStyle={styles.backlogGridRow}
             refreshControl={
               <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            }
+            ListHeaderComponent={
+              <View style={styles.backlogSectionHeader}>
+                <Text style={styles.backlogSectionTitle}>Backlog</Text>
+                <View style={styles.backlogCountPill}>
+                  <Text style={styles.backlogCountPillText}>
+                    {backlogItemCount} album{backlogItemCount === 1 ? "" : "s"}
+                  </Text>
+                </View>
+              </View>
             }
             ListEmptyComponent={
               <View style={styles.backlogEmptyState}>
@@ -839,30 +1009,16 @@ const styles = StyleSheet.create({
     marginBottom: 18,
     backgroundColor: "#d1d5db",
   },
-  heroEyebrow: {
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 1.3,
-    color: "#6b7280",
-    marginBottom: 6,
-  },
   heroTitle: {
     fontSize: 27,
     fontWeight: "800",
     color: "#111827",
   },
-  heroSubtitle: {
-    marginTop: 8,
-    fontSize: 15,
-    lineHeight: 22,
-    color: "#4b5563",
-    textAlign: "center",
-  },
   metaRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 10,
-    marginTop: 18,
+    marginTop: 14,
     justifyContent: "center",
   },
   metaChip: {
@@ -1204,20 +1360,156 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingVertical: 12,
   },
-  backlogListContent: {
+  historyListContent: {
     paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 24,
+    paddingTop: 14,
+    paddingBottom: 28,
   },
-  backlogEmptyContent: {
+  historyEmptyContent: {
     flexGrow: 1,
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 28,
     paddingBottom: 48,
   },
+  historyHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 14,
+  },
+  historyHeaderTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#111827",
+  },
+  historyCountPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "#f3f4f6",
+  },
+  historyCountPillText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#4b5563",
+  },
+  historyEmptyState: {
+    alignItems: "center",
+  },
+  historyEmptyTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  historyEmptyBody: {
+    marginTop: 8,
+    fontSize: 14,
+    lineHeight: 20,
+    color: "#6b7280",
+    textAlign: "center",
+  },
+  historyReviewCard: {
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eceff3",
+  },
+  historyReviewRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  historyReviewCover: {
+    width: 74,
+    height: 74,
+    borderRadius: 8,
+    backgroundColor: "#e5e7eb",
+  },
+  historyReviewCoverFallback: {
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  historyReviewCoverFallbackText: {
+    fontSize: 24,
+    fontWeight: "800",
+    color: "#4b5563",
+  },
+  historyReviewContent: {
+    flex: 1,
+    marginLeft: 14,
+  },
+  historyReviewAlbum: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: "#111827",
+  },
+  historyReviewArtist: {
+    marginTop: 2,
+    fontSize: 13,
+    color: "#6b7280",
+  },
+  historyMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 8,
+  },
+  historyMetaPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: "#f3f4f6",
+  },
+  historyMetaPillText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  historyReviewDate: {
+    fontSize: 12,
+    color: "#6b7280",
+  },
+  historyReviewBody: {
+    marginTop: 10,
+    fontSize: 14,
+    lineHeight: 20,
+    color: "#374151",
+  },
+  backlogGridContent: {
+    paddingHorizontal: BACKLOG_GRID_PADDING,
+    paddingTop: 14,
+    paddingBottom: 28,
+  },
+  backlogGridRow: {
+    justifyContent: "flex-start",
+    gap: BACKLOG_GRID_GAP,
+  },
+  backlogSectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  backlogSectionTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#111827",
+  },
+  backlogCountPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "#f3f4f6",
+  },
+  backlogCountPillText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#4b5563",
+  },
   backlogEmptyState: {
     alignItems: "center",
+    paddingTop: 48,
+    paddingHorizontal: 28,
   },
   backlogEmptyTitle: {
     fontSize: 18,
@@ -1231,16 +1523,13 @@ const styles = StyleSheet.create({
     color: "#6b7280",
     textAlign: "center",
   },
-  backlogAlbumRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e5e7eb",
+  backlogAlbumTile: {
+    width: BACKLOG_TILE_SIZE,
+    marginBottom: 18,
   },
   backlogAlbumCover: {
-    width: 68,
-    height: 68,
+    width: BACKLOG_TILE_SIZE,
+    height: BACKLOG_TILE_SIZE,
     borderRadius: 8,
     backgroundColor: "#e5e7eb",
   },
@@ -1249,28 +1538,27 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   backlogAlbumCoverFallbackText: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: "800",
     color: "#4b5563",
   },
-  backlogAlbumContent: {
-    flex: 1,
-    marginLeft: 12,
-    marginRight: 12,
+  backlogAlbumMetaWrap: {
+    paddingTop: 8,
   },
   backlogAlbumTitle: {
-    fontSize: 16,
+    fontSize: 11,
     fontWeight: "700",
     color: "#111827",
+    lineHeight: 14,
   },
   backlogAlbumArtist: {
-    marginTop: 4,
-    fontSize: 13,
-    color: "#4b5563",
+    marginTop: 2,
+    fontSize: 10,
+    color: "#6b7280",
   },
   backlogAlbumMeta: {
-    marginTop: 6,
-    fontSize: 12,
+    marginTop: 3,
+    fontSize: 10,
     color: "#9ca3af",
   },
   lists: {

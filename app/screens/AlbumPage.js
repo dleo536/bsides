@@ -4,8 +4,13 @@ import React, {
   useCallback,
   useLayoutEffect,
 } from "react";
-import { getAlbum, getArtistPhotoByAlbum } from "../api/SpotifyAPI";
-import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import {
+  getAlbum,
+  getArtistById,
+  getArtistPhotoByAlbum,
+  getTrackListFromSpotify,
+} from "../api/SpotifyAPI";
+import { useNavigation } from "@react-navigation/native";
 import {
   View,
   Image,
@@ -27,42 +32,71 @@ import { LinearGradient } from "expo-linear-gradient";
 import { postReview } from "../api/ReviewAPI";
 import { Review } from "../logic/Review";
 import { getListByUID, patchAlbumList, postList } from "../api/ListAPI";
-import { findMixingCreditsFromMusicBrainz } from "../api/MusicBrainz";
-import { getTrackListFromSpotify } from "../api/SpotifyAPI";
-import { getArtistBio } from "../api/MusicBrainz";
-import { createMaterialTopTabNavigator } from "@react-navigation/material-top-tabs";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { ScrollView } from "react-native";
-import { getAlbumCreditsByName } from "../api/MusicBrainz";
-import { searchReleaseGroup } from "../api/MusicBrainz";
-import { TabView, SceneMap } from "react-native-tab-view";
-import { TabBar } from "react-native-tab-view";
+import {
+  getAlbumCreditsByName,
+  getAlbumDescriptionFromMusicBrainz,
+  searchReleaseGroup,
+} from "../api/MusicBrainz";
 import { resolveBackendUserId } from "../api/UserAPI";
+
+const formatDetailDate = (dateString) => {
+  if (!dateString) {
+    return "Unknown";
+  }
+
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) {
+    return "Unknown";
+  }
+
+  return date.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+};
+
+const formatGenreLabel = (genre) =>
+  typeof genre === "string" && genre.trim()
+    ? genre
+        .split(/[-_]/g)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ")
+    : genre;
+
+const DetailStat = ({ label, value }) => (
+  <View style={styles.detailStatCard}>
+    <Text style={styles.detailStatLabel}>{label}</Text>
+    <Text style={styles.detailStatValue}>{value || "Unknown"}</Text>
+  </View>
+);
 
 const PersonnelTab = ({ isFocused, albumData }) => {
   const [credits, setCredits] = useState([]);
   const [loading, setLoading] = useState(true);
-  const route = useRoute();
-  //const albumData = route.params?.albumData;
 
   useEffect(() => {
     if (!isFocused) return;
-    console.log("UseCallback is being called for PersonnelTab");
+    setLoading(true);
     const getCredits = async () => {
-      if (!albumData?.name || !albumData?.artists?.[0]?.name) return;
+      if (!albumData?.name || !albumData?.artists?.[0]?.name) {
+        setCredits([]);
+        setLoading(false);
+        return;
+      }
 
-      console.log("Fetching credits for:", albumData.name);
       const fetchedCredits = await getAlbumCreditsByName(
         albumData.name,
         albumData.artists[0].name
       );
       setCredits(fetchedCredits);
-      console.log("credits from album Page: ", fetchedCredits);
       setLoading(false);
     };
 
     getCredits();
-  }, [albumData?.name]);
+  }, [albumData?.artists, albumData?.name, isFocused]);
 
   if (loading) {
     return (
@@ -94,29 +128,86 @@ const PersonnelTab = ({ isFocused, albumData }) => {
   );
 };
 
-const DetailsTab = () => {
+const DetailsTab = ({
+  albumData,
+  artistGenres,
+  albumDescription,
+  albumDescriptionSource,
+  detailsLoading,
+}) => {
+  const genres = Array.isArray(artistGenres) ? artistGenres.filter(Boolean) : [];
+
   return (
-    <SafeAreaProvider>
-      <SafeAreaView style={styles.container}>
-        <View>
-          <Text>Details</Text>
-          <Text>Details</Text>
-          <Text>Details</Text>
-          <Text>Details</Text>
-          <Text>Details</Text>
-          <Text>Details</Text>
-        </View>
-      </SafeAreaView>
-    </SafeAreaProvider>
+    <View style={styles.detailsContainer}>
+      <View style={styles.detailsStatsGrid}>
+        <DetailStat
+          label="Release Date"
+          value={formatDetailDate(albumData?.release_date)}
+        />
+        <DetailStat
+          label="Tracks"
+          value={
+            typeof albumData?.total_tracks === "number"
+              ? `${albumData.total_tracks}`
+              : "Unknown"
+          }
+        />
+        <DetailStat label="Label" value={albumData?.label || "Unknown"} />
+        <DetailStat
+          label="Type"
+          value={formatGenreLabel(albumData?.album_type || "album")}
+        />
+      </View>
+
+      <View style={styles.detailsSection}>
+        <Text style={styles.detailsSectionTitle}>Genre</Text>
+        {detailsLoading && genres.length === 0 ? (
+          <View style={styles.detailsLoadingRow}>
+            <ActivityIndicator size="small" color="#111827" />
+            <Text style={styles.detailsMutedText}>Loading genre...</Text>
+          </View>
+        ) : genres.length > 0 ? (
+          <View style={styles.genreChipRow}>
+            {genres.map((genre) => (
+              <View key={genre} style={styles.genreChip}>
+                <Text style={styles.genreChipText}>{formatGenreLabel(genre)}</Text>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <Text style={styles.detailsMutedText}>
+            Genre data is unavailable for this artist.
+          </Text>
+        )}
+      </View>
+
+      <View style={styles.detailsSection}>
+        <Text style={styles.detailsSectionTitle}>Description</Text>
+        {detailsLoading && !albumDescription ? (
+          <View style={styles.detailsLoadingRow}>
+            <ActivityIndicator size="small" color="#111827" />
+            <Text style={styles.detailsMutedText}>Loading description...</Text>
+          </View>
+        ) : albumDescription ? (
+          <>
+            <Text style={styles.detailsBodyText}>{albumDescription}</Text>
+            {albumDescriptionSource ? (
+              <Text style={styles.detailsSourceText}>{albumDescriptionSource}</Text>
+            ) : null}
+          </>
+        ) : (
+          <Text style={styles.detailsMutedText}>
+            No description is available for this album.
+          </Text>
+        )}
+      </View>
+    </View>
   );
 };
 const TracksTab = ({ isFocused, trackList }) => {
-  const route = useRoute();
-
   const navigation = useNavigation();
   useEffect(() => {
     if (!isFocused) return;
-    console.log("UseCallback is being called for TracksTab");
   }, [isFocused]);
 
   return (
@@ -140,66 +231,6 @@ const TracksTab = ({ isFocused, trackList }) => {
     </View>
   );
 };
-const MyMidScreenTabs = ({ albumData, trackList }) => {
-  const [index, setIndex] = useState(0);
-  const [routes] = useState([
-    { key: "personnel", title: "Personnel" },
-    { key: "tracks", title: "Tracks" },
-    { key: "details", title: "Details" },
-  ]);
-  const [tabViewHeight, setTabViewHeight] = useState(0);
-  const renderScene = ({ route }) => {
-    switch (route.key) {
-      case "personnel":
-        return (
-          <View
-            onLayout={(event) => {
-              const { height } = event.nativeEvent.layout;
-              setTabViewHeight(height);
-            }}
-          >
-            <PersonnelTab isFocused={index === 0} albumData={albumData} />
-          </View>
-        );
-      case "tracks":
-        return (
-          <View
-            onLayout={(event) => {
-              const { height } = event.nativeEvent.layout;
-              setTabViewHeight(height);
-            }}
-          >
-            <TracksTab isFocused={index === 1} trackList={trackList} />
-          </View>
-        );
-      case "details":
-        return <DetailsTab isFocused={index === 2} />;
-      default:
-        return null;
-    }
-  };
-  return (
-    <View>
-      <TabView
-        navigationState={{ index, routes }}
-        renderScene={renderScene}
-        onIndexChange={setIndex}
-        initialLayout={{ width: Dimensions.get("window").width }}
-        lazy={true}
-        renderTabBar={(props) => (
-          <TabBar
-            {...props}
-            indicatorStyle={{ backgroundColor: "blue" }}
-            style={{ backgroundColor: "white" }}
-            activeColor="blue"
-            inactiveColor="gray"
-          />
-        )}
-        style={{ marginTop: 20, height: tabViewHeight || 200 }}
-      />
-    </View>
-  );
-};
 
 const AlbumPage = (route) => {
   const windowWidth = Dimensions.get("window").width;
@@ -219,9 +250,12 @@ const AlbumPage = (route) => {
   const [description, setDescription] = useState(false);
   const [listReturned, setListReturned] = useState();
   const [selectedIds, setSelectedIds] = useState([]);
-  const [credits, setCredits] = useState([]);
   const [trackList, setTrackList] = useState([]);
-  const [activeTab, setActiveTab] = useState("personnel");
+  const [artistGenres, setArtistGenres] = useState([]);
+  const [albumDescription, setAlbumDescription] = useState("");
+  const [albumDescriptionSource, setAlbumDescriptionSource] = useState("");
+  const [detailsLoading, setDetailsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("details");
   const [index, setIndex] = useState(0);
   const [showCreateList, setShowCreateList] = useState(false);
   const [newListName, setNewListName] = useState("");
@@ -230,28 +264,96 @@ const AlbumPage = (route) => {
   const [listsLoading, setListsLoading] = useState(false);
   const [listsError, setListsError] = useState("");
 
-  let newPhoto;
   const navigation = useNavigation();
-  const Tab = createMaterialTopTabNavigator();
   useEffect(() => {
-    async function setPhoto() {
-      try {
-        const photoFromAPI = await getArtistPhotoByAlbum(album.id);
-        if (photoFromAPI) {
-          setArtistPhoto(photoFromAPI);
-        }
-      } catch (error) {
-        console.error("Error fetching image:", error);
-      } finally {
-        setLoading(false);
-      }
+    let isMounted = true;
 
-      console.log("aristphoto: ", album.id);
+    async function loadAlbumPageData() {
+      setLoading(true);
+      setDetailsLoading(true);
+
+      try {
+        const [albumResult, photoResult, trackResult] = await Promise.allSettled([
+          getAlbum(album.id),
+          getArtistPhotoByAlbum(album.id),
+          getTrackListFromSpotify(album.id),
+        ]);
+
+        const resolvedAlbum =
+          albumResult.status === "fulfilled" && albumResult.value?.id
+            ? albumResult.value
+            : album;
+
+        if (!isMounted) {
+          return;
+        }
+
+        setAlbumData(resolvedAlbum || {});
+        setArtistPhoto(
+          photoResult.status === "fulfilled" ? photoResult.value || null : null
+        );
+        setTrackList(
+          trackResult.status === "fulfilled" && Array.isArray(trackResult.value)
+            ? trackResult.value
+            : []
+        );
+
+        const primaryArtistId = resolvedAlbum?.artists?.[0]?.id;
+        const primaryArtistName = resolvedAlbum?.artists?.[0]?.name;
+
+        const [artistResult, descriptionResult] = await Promise.allSettled([
+          primaryArtistId ? getArtistById(primaryArtistId) : Promise.resolve(null),
+          resolvedAlbum?.name && primaryArtistName
+            ? getAlbumDescriptionFromMusicBrainz(
+                resolvedAlbum.name,
+                primaryArtistName
+              )
+            : Promise.resolve({ description: "", source: null }),
+        ]);
+
+        if (!isMounted) {
+          return;
+        }
+
+        const nextArtistGenres =
+          artistResult.status === "fulfilled" &&
+          Array.isArray(artistResult.value?.genres)
+            ? artistResult.value.genres.filter(Boolean)
+            : [];
+
+        setArtistGenres(nextArtistGenres);
+        setAlbumDescription(
+          descriptionResult.status === "fulfilled"
+            ? descriptionResult.value?.description || ""
+            : ""
+        );
+        setAlbumDescriptionSource(
+          descriptionResult.status === "fulfilled"
+            ? descriptionResult.value?.source || ""
+            : ""
+        );
+      } catch (error) {
+        console.error("Error loading album page data:", error);
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+          setDetailsLoading(false);
+        }
+      }
     }
-    setPhoto();
-    getCredits();
-    getTrackList();
+
+    loadAlbumPageData();
+
+    return () => {
+      isMounted = false;
+    };
   }, [album.id]);
+
+  useEffect(() => {
+    setActiveTab("details");
+    setIndex(0);
+  }, [album.id]);
+
   useLayoutEffect(() => {
     navigation.setOptions({
       headerTitle: albumData.name, // top header text
@@ -264,15 +366,7 @@ const AlbumPage = (route) => {
         </TouchableOpacity> // bottom tab label
       ), // Optional: also change title
     });
-  }, [navigation]);
-  const getCredits = async () => {
-    const credits = await getAlbumCreditsByName(
-      albumData.name,
-      albumData.artists[0].name
-    );
-    setCredits(credits);
-    console.log("-------------> credits from album Page: ", credits);
-  };
+  }, [albumData.name, navigation]);
   const formatDate = (dateString) => {
     const date = new Date(dateString);
     return date.toLocaleDateString("en-US", {
@@ -404,10 +498,6 @@ const AlbumPage = (route) => {
       alert("Failed to submit review. Please try again.");
     }
   };
-  const getTrackList = async () => {
-    const trackList = await getTrackListFromSpotify(albumData.id);
-    setTrackList(trackList);
-  };
 
   const submitLists = async () => {
     //for each item in ListArray
@@ -504,7 +594,7 @@ const AlbumPage = (route) => {
                   {albumData.name || "Unknown Album"}
                 </Text>
                 <Text style={{ padding: 5 }}>
-                  {new Date(albumData.release_date).toDateString()}
+                  {formatDate(albumData.release_date)}
                 </Text>
                 {albumData.artists?.[0] && (
                   <Text style={{ padding: 5 }}>
@@ -515,23 +605,22 @@ const AlbumPage = (route) => {
             </View>
 
             {/* Mid Screen Tabs */}
-            {/* <MyMidScreenTabs albumData={albumData} trackList={trackList} /> */}
             <View style={styles.tabBar}>
               <TouchableOpacity
                 onPress={() => {
-                  setActiveTab("personnel");
+                  setActiveTab("details");
                   setIndex(0);
                 }}
                 style={styles.tabButton}
               >
                 <Text
                   style={
-                    activeTab === "personnel"
+                    activeTab === "details"
                       ? styles.activeTabText
                       : styles.inactiveTabText
                   }
                 >
-                  Personnel
+                  Details
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -553,32 +642,38 @@ const AlbumPage = (route) => {
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => {
-                  setActiveTab("details");
+                  setActiveTab("personnel");
                   setIndex(2);
                 }}
                 style={styles.tabButton}
               >
                 <Text
                   style={
-                    activeTab === "details"
+                    activeTab === "personnel"
                       ? styles.activeTabText
                       : styles.inactiveTabText
                   }
                 >
-                  Details
+                  Personnel
                 </Text>
               </TouchableOpacity>
             </View>
 
             <View style={styles.tabContent}>
-              {activeTab === "personnel" && (
-                <PersonnelTab albumData={albumData} isFocused={index === 0} />
+              {activeTab === "details" && (
+                <DetailsTab
+                  albumData={albumData}
+                  artistGenres={artistGenres}
+                  albumDescription={albumDescription}
+                  albumDescriptionSource={albumDescriptionSource}
+                  detailsLoading={detailsLoading}
+                />
               )}
               {activeTab === "tracks" && (
                 <TracksTab isFocused={index === 1} trackList={trackList} />
               )}
-              {activeTab === "details" && (
-                <DetailsTab isFocused={index === 2} />
+              {activeTab === "personnel" && (
+                <PersonnelTab albumData={albumData} isFocused={index === 2} />
               )}
             </View>
 
@@ -1278,6 +1373,78 @@ const styles = StyleSheet.create({
   },
   tabContent: {
     padding: 16,
+  },
+  detailsContainer: {
+    gap: 20,
+  },
+  detailsStatsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+  detailStatCard: {
+    width: "47%",
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: "#f7f7f8",
+    borderWidth: 1,
+    borderColor: "#ececec",
+  },
+  detailStatLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    color: "#6b7280",
+    textTransform: "uppercase",
+  },
+  detailStatValue: {
+    marginTop: 8,
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  detailsSection: {
+    gap: 10,
+  },
+  detailsSectionTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#111827",
+  },
+  detailsLoadingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  detailsMutedText: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: "#6b7280",
+  },
+  detailsBodyText: {
+    fontSize: 15,
+    lineHeight: 24,
+    color: "#374151",
+  },
+  detailsSourceText: {
+    fontSize: 12,
+    color: "#9ca3af",
+  },
+  genreChipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  genreChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "#f3f4f6",
+  },
+  genreChipText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#111827",
   },
   tabSectionTitle: {
     fontSize: 20,

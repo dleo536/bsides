@@ -35,6 +35,14 @@ async function getReleasesFromGroup(groupId) {
   return data.releases || [];
 }
 
+async function getReleaseGroupMetadata(groupId) {
+  await sleep(1000);
+  const url = `${BASE_URL}/release-group/${groupId}?inc=url-rels&fmt=json`;
+  const res = await fetch(url, { headers: HEADERS });
+  const data = await res.json();
+  return data;
+}
+
 // Get full release data including track listing
 async function getFullReleaseData(releaseId) {
   await sleep(1000);
@@ -286,5 +294,100 @@ export async function getAlbumCreditsByName(album, artist) {
   } catch (err) {
     console.error(`❌ Error: ${err.message}`);
     return [];
+  }
+}
+
+const extractWikipediaTitle = (resourceUrl) => {
+  if (typeof resourceUrl !== "string" || !resourceUrl.includes("/wiki/")) {
+    return null;
+  }
+
+  const title = resourceUrl.split("/wiki/")[1];
+  return title ? decodeURIComponent(title) : null;
+};
+
+async function getWikipediaSummary(resourceUrl) {
+  const title = extractWikipediaTitle(resourceUrl);
+  if (!title) {
+    return null;
+  }
+
+  const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(
+    title
+  )}`;
+  const res = await fetch(url, { headers: HEADERS });
+
+  if (!res.ok) {
+    return null;
+  }
+
+  const data = await res.json();
+  const summary =
+    typeof data?.extract === "string" && data.extract.trim()
+      ? data.extract.trim()
+      : null;
+
+  return summary;
+}
+
+export async function getAlbumDescriptionFromMusicBrainz(album, artist) {
+  try {
+    const releaseGroup = await searchReleaseGroup(album, artist);
+    if (!releaseGroup?.id) {
+      return { description: "", source: null };
+    }
+
+    const metadata = await getReleaseGroupMetadata(releaseGroup.id);
+    const wikipediaRelation = Array.isArray(metadata?.relations)
+      ? metadata.relations.find((relation) => {
+          const relationType = relation?.type?.toLowerCase?.() || "";
+          const resource = relation?.url?.resource || "";
+          return (
+            relationType === "wikipedia" ||
+            resource.includes("wikipedia.org/wiki/")
+          );
+        })
+      : null;
+
+    if (wikipediaRelation?.url?.resource) {
+      const summary = await getWikipediaSummary(wikipediaRelation.url.resource);
+      if (summary) {
+        return {
+          description: summary,
+          source: "MusicBrainz-linked Wikipedia",
+        };
+      }
+    }
+
+    const annotation =
+      typeof metadata?.annotation === "string" && metadata.annotation.trim()
+        ? metadata.annotation.trim()
+        : null;
+    if (annotation) {
+      return {
+        description: annotation,
+        source: "MusicBrainz annotation",
+      };
+    }
+
+    const disambiguation =
+      typeof metadata?.disambiguation === "string" && metadata.disambiguation.trim()
+        ? metadata.disambiguation.trim()
+        : typeof releaseGroup?.disambiguation === "string" &&
+          releaseGroup.disambiguation.trim()
+        ? releaseGroup.disambiguation.trim()
+        : null;
+
+    if (disambiguation) {
+      return {
+        description: disambiguation,
+        source: "MusicBrainz release group",
+      };
+    }
+
+    return { description: "", source: null };
+  } catch (error) {
+    console.error("getAlbumDescriptionFromMusicBrainz error:", error);
+    return { description: "", source: null };
   }
 }

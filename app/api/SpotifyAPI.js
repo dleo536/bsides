@@ -131,6 +131,19 @@ const fetchArtistImage = async (artistID, accessToken) => {
 
   return data.images[0].url; // Returns artist photo
 };
+const fetchArtist = async (artistID, accessToken) => {
+  const url = `https://api.spotify.com/v1/artists/${artistID}`;
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  const data = await response.json();
+  return data;
+};
 const fetchArtistsByName = async (
   searchValue,
   accessToken,
@@ -224,6 +237,11 @@ export const getArtistPhotoByAlbum = async (albumID) => {
   const photoURL = await fetchArtistPhotoByAlbum(albumID, token);
   console.log("ummmmmmm", photoURL);
   return photoURL;
+};
+export const getArtistById = async (artistID) => {
+  const token = await getAccessToken();
+  const artist = await fetchArtist(artistID, token);
+  return artist;
 };
 export const getArtistsByName = async (artistName, page = 0, limit = 10) => {
   const offset = page * limit;

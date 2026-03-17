@@ -25,12 +25,12 @@ const PAGE_SIZE = 12;
 
 const TILE_GUTTER = 8;
 const HORIZONTAL_PADDING = 8;
-const RATING_SIZE_MULTIPLIER = {
-  XS: 0.92,
-  S: 1.0,
-  M: 1.1,
-  L: 1.22,
-  XL: 1.36,
+const RATING_SIZE_SCALE = {
+  XS: 0.7,
+  S: 0.8,
+  M: 0.88,
+  L: 0.94,
+  XL: 1.0,
 };
 
 const getMasonryColumnCount = (width) => {
@@ -73,7 +73,11 @@ const buildMasonryColumns = (reviews, columnCount, columnWidth) => {
   reviews.forEach((review, index) => {
     const ratingOnTenScale = getRatingOnTenScale(review);
     const sizeClass = getRatingSizeClass(ratingOnTenScale);
-    const tileHeight = Math.round(columnWidth * RATING_SIZE_MULTIPLIER[sizeClass]);
+    const visualSize = Math.max(
+      74,
+      Math.round(columnWidth * RATING_SIZE_SCALE[sizeClass])
+    );
+    const tileHeight = visualSize + 6;
 
     let shortestColumnIndex = 0;
     for (let i = 1; i < columnCount; i += 1) {
@@ -90,6 +94,7 @@ const buildMasonryColumns = (reviews, columnCount, columnWidth) => {
       key: stableKey,
       review,
       tileHeight,
+      visualSize,
       coverUri: review?.albumCover || review?.coverUrlSnapshot || null,
       ratingLabel: ratingOnTenScale ? ratingOnTenScale.toFixed(1) : "—",
     });
@@ -167,15 +172,22 @@ const MasonryReviewGrid = ({
                   { height: tile.tileHeight, marginBottom: TILE_GUTTER },
                 ]}
               >
-                {tile.coverUri ? (
-                  <Image source={{ uri: tile.coverUri }} style={styles.masonryImage} />
-                ) : (
-                  <View style={styles.missingCoverTile}>
-                    <Text style={styles.missingCoverText}>NO COVER</Text>
+                <View
+                  style={[
+                    styles.masonrySleeve,
+                    { width: tile.visualSize, height: tile.visualSize },
+                  ]}
+                >
+                  {tile.coverUri ? (
+                    <Image source={{ uri: tile.coverUri }} style={styles.masonryImage} />
+                  ) : (
+                    <View style={styles.missingCoverTile}>
+                      <Text style={styles.missingCoverText}>NO COVER</Text>
+                    </View>
+                  )}
+                  <View style={styles.ratingBadge}>
+                    <Text style={styles.ratingBadgeText}>{tile.ratingLabel}</Text>
                   </View>
-                )}
-                <View style={styles.ratingBadge}>
-                  <Text style={styles.ratingBadgeText}>{tile.ratingLabel}</Text>
                 </View>
               </TouchableOpacity>
             ))}
@@ -414,16 +426,25 @@ const styles = StyleSheet.create({
   },
   masonryTile: {
     width: "100%",
-    backgroundColor: "#d6d6d6",
-    borderRadius: 0,
-    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "flex-start",
+  },
+  masonrySleeve: {
     position: "relative",
+    backgroundColor: "#d6d6d6",
+    borderRadius: 2,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
   },
   masonryImage: {
     width: "100%",
     height: "100%",
     resizeMode: "cover",
-    borderRadius: 0,
+    borderRadius: 2,
   },
   missingCoverTile: {
     flex: 1,
