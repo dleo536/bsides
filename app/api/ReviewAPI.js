@@ -81,6 +81,63 @@ export const getReviewsByUID = async (uid) => {
   const reviewArray = await Promise.all(reviews.map(jsonToReviews));
   return reviewArray;
 };
+
+export const getReviewsByAlbum = async (
+  { spotifyAlbumId = null, releaseGroupMbId = null } = {},
+  { offset = 0, limit = 20 } = {}
+) => {
+  const normalizedSpotifyAlbumId = spotifyAlbumId?.trim?.() || "";
+  const normalizedReleaseGroupMbId = releaseGroupMbId?.trim?.() || "";
+
+  if (!normalizedSpotifyAlbumId && !normalizedReleaseGroupMbId) {
+    return { data: [], hasMore: false, totalCount: 0 };
+  }
+
+  try {
+    const searchParams = new URLSearchParams({
+      offset: String(offset),
+      limit: String(limit),
+    });
+
+    if (normalizedSpotifyAlbumId) {
+      searchParams.append("spotifyAlbumId", normalizedSpotifyAlbumId);
+    }
+    if (normalizedReleaseGroupMbId) {
+      searchParams.append("releaseGroupMbId", normalizedReleaseGroupMbId);
+    }
+
+    const requestUrl = `${API_BASE_URL}/reviews?${searchParams.toString()}`;
+    const response = await fetch(requestUrl, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+    });
+    const json = await parseJsonSafely(response, "GET /reviews album lookup");
+
+    if (!response.ok || !json) {
+      console.error("[getReviewsByAlbum] request failed", {
+        requestUrl,
+        status: response.status,
+        body: json,
+      });
+      return { data: [], hasMore: false, totalCount: 0 };
+    }
+
+    const reviews = Array.isArray(json?.data) ? json.data : [];
+    const reviewArray = await Promise.all(reviews.map(jsonToReviews));
+
+    return {
+      data: reviewArray,
+      hasMore: Boolean(json?.hasMore),
+      totalCount: Number(json?.totalCount || 0),
+    };
+  } catch (error) {
+    console.error("getReviewsByAlbum error:", error);
+    return { data: [], hasMore: false, totalCount: 0 };
+  }
+};
 /**
  * Create a new review
  * @param {string} userId - User ID creating the review
@@ -280,6 +337,8 @@ const jsonToReviews = async (jsonResponse) => {
     try {
       const albumData = await getAlbum(review.spotifyAlbumId);
       if (albumData) {
+        review.albumData = albumData;
+        review.primaryArtistId = albumData.artists?.[0]?.id || null;
         // Update snapshots if Spotify provides better data
         if (!review.albumTitleSnapshot && albumData.name) {
           review.albumTitleSnapshot = albumData.name;

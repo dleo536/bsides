@@ -1,326 +1,656 @@
-import React, { useEffect, useState } from "react";
-import { getAlbum, getArtistPhotoByAlbum } from "../api/SpotifyAPI";
-import { useNavigation } from "@react-navigation/native";
+import React, { useEffect, useLayoutEffect, useState } from "react";
 import {
-  View,
-  Image,
-  Text,
-  StyleSheet,
-  Dimensions,
   ActivityIndicator,
-  TouchableOpacity,
-  Modal,
-  Pressable,
-  TextInput,
-  FlatList,
+  Image,
   ScrollView,
-  SafeAreaView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  useWindowDimensions,
 } from "react-native";
-import { useRoute } from "@react-navigation/native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { auth } from "../config/firebase";
+import { useNavigation, useRoute } from "@react-navigation/native";
+import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { postReview } from "../api/ReviewAPI";
-import { Review } from "../logic/Review";
-import { getListByUID, patchAlbumList } from "../api/ListAPI";
-import { List } from "../logic/List";
-import { getAlbumsByArtist } from "../api/SpotifyAPI";
-import { getDiscogsArtistImage } from "../api/Discogs";
-import { getDiscogsArtistBio } from "../api/Discogs";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  getAlbumsByArtist,
+  getArtistById,
+  getArtistByName,
+} from "../api/SpotifyAPI";
+import { getDiscogsArtistBio, getDiscogsArtistImage } from "../api/Discogs";
 
-const ArtistPage = (route) => {
-  const windowWidth = Dimensions.get("window").width;
-  const windowHeight = Dimensions.get("window").height;
-  const insets = useSafeAreaInsets();
+const BIO_COLLAPSE_LENGTH = 320;
+const PAGE_PADDING = 20;
+const CARD_PADDING = 18;
+const GRID_GAP = 12;
 
-  const newRoute = useRoute(); // Get route object
-  // console.log("Route Params:", newRoute.params); // Debugging log
-  const { artist } = newRoute.params; // Correctly destructure the album parameter
-  const [artistData, setArtistData] = useState(artist || {}); // Initialize state with passed album
-  const navigation = useNavigation();
-  const [artistPhoto, setArtistPhoto] = useState();
-  const [loading, setLoading] = useState(true);
-  const [description, setDescription] = useState(false);
-  const [listReturned, setListReturned] = useState();
-  const [selectedIds, setSelectedIds] = useState([]);
-  const [artistAlbums, setArtistAlbums] = useState([]);
-  const [bio, setBio] = useState("");
-  const [artistCoverPhoto, setArtistCoverPhoto] = useState();
-  const [isBioExpanded, setIsBioExpanded] = useState(false);
-  const BIO_MAX_LENGTH = 150; // Character limit before showing "See More"
-  let newPhoto;
+const getArtistImageUrl = (artist) => {
+  const firstImage = artist?.images?.[0];
 
-  useEffect(() => {
-    getArtistAlbums();
-    getArtistBio();
-    // getArtistCoverPhoto();
-  }, []);
+  if (typeof firstImage?.url === "string" && firstImage.url.trim()) {
+    return firstImage.url;
+  }
 
-  const getArtistCoverPhoto = async () => {
-    const coverPhoto = await getDiscogsArtistImage(artistData.name);
-    console.log("coverPhoto", coverPhoto);
-    setArtistCoverPhoto(coverPhoto);
-  };
-  const getArtistAlbums = async () => {
-    const albums = await getAlbumsByArtist(artistData.id);
-    // console.log("albums", albums);
-    setArtistAlbums(albums);
-  };
-  const getArtistBio = async () => {
-    const bio = await getDiscogsArtistBio(artistData.name);
-    console.log("bio", bio);
-    setBio(bio);
-  };
-  const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
+  if (typeof firstImage === "string" && firstImage.trim()) {
+    return firstImage;
+  }
+
+  return null;
+};
+
+const sanitizeBioText = (bio) => {
+  if (typeof bio !== "string") {
+    return "";
+  }
+
+  const cleaned = bio
+    .replace(/\[url=[^\]]+\]([^\[]+)\[\/url\]/gi, "$1")
+    .replace(/\[(?:a|r|m|l)=([^\]]+)\]/gi, "$1")
+    .replace(/\[\/?(?:a|r|m|l|url)[^\]]*\]/gi, "")
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]*\n[ \t]*/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+
+  if (
+    !cleaned ||
+    /^artist not found$/i.test(cleaned) ||
+    /^no bio available\.?$/i.test(cleaned)
+  ) {
+    return "";
+  }
+
+  return cleaned;
+};
+
+const formatGenreLabel = (genre) =>
+  typeof genre === "string" && genre.trim()
+    ? genre
+        .split(/[-_]/g)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ")
+    : genre;
+
+const formatCompactNumber = (value) => {
+  if (typeof value !== "number") {
+    return "";
+  }
+
+  return new Intl.NumberFormat("en-US", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
+};
+
+const normalizeAlbums = (albums) => {
+  if (!Array.isArray(albums)) {
+    return [];
+  }
+
+  const seen = new Set();
+
+  return albums
+    .filter((album) => {
+      const key = album?.id || `${album?.name || "album"}-${album?.release_date || ""}`;
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    })
+    .sort((left, right) => {
+      const leftDate = left?.release_date || "";
+      const rightDate = right?.release_date || "";
+
+      return rightDate.localeCompare(leftDate);
     });
-  };
+};
+
+const StatPill = ({ icon, label }) => (
+  <View style={styles.statPill}>
+    <Ionicons name={icon} size={14} color="#374151" />
+    <Text style={styles.statPillText}>{label}</Text>
+  </View>
+);
+
+const GenreChip = ({ genre }) => (
+  <View style={styles.genreChip}>
+    <Text style={styles.genreChipText}>{formatGenreLabel(genre)}</Text>
+  </View>
+);
+
+const AlbumTile = ({ album, width, onPress }) => {
+  const coverUri = album?.images?.[0]?.url;
+  const releaseYear =
+    typeof album?.release_date === "string" && album.release_date.length >= 4
+      ? album.release_date.slice(0, 4)
+      : null;
 
   return (
-    <SafeAreaView style={{ flex: 1 }}>
+    <TouchableOpacity
+      activeOpacity={0.84}
+      onPress={onPress}
+      style={[styles.albumTile, { width }]}
+    >
+      {coverUri ? (
+        <Image source={{ uri: coverUri }} style={[styles.albumCover, { width, height: width }]} />
+      ) : (
+        <View style={[styles.albumCoverFallback, { width, height: width }]}>
+          <Ionicons name="disc-outline" size={26} color="#6b7280" />
+        </View>
+      )}
+      <Text style={styles.albumTitle} numberOfLines={2}>
+        {album?.name || "Untitled Album"}
+      </Text>
+      <Text style={styles.albumSubtitle} numberOfLines={1}>
+        {releaseYear || "Album"}
+      </Text>
+    </TouchableOpacity>
+  );
+};
+
+export default function ArtistPage() {
+  const navigation = useNavigation();
+  const route = useRoute();
+  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const initialArtist = route.params?.artist || {};
+
+  const [artistData, setArtistData] = useState(initialArtist);
+  const [artistImageUri, setArtistImageUri] = useState(getArtistImageUrl(initialArtist));
+  const [bio, setBio] = useState("");
+  const [artistAlbums, setArtistAlbums] = useState([]);
+  const [pageLoading, setPageLoading] = useState(true);
+  const [albumsLoading, setAlbumsLoading] = useState(true);
+  const [bioLoading, setBioLoading] = useState(true);
+  const [isBioExpanded, setIsBioExpanded] = useState(false);
+
+  const albumColumns = width >= 520 ? 4 : 3;
+  const albumTileSize = Math.floor(
+    (width - PAGE_PADDING * 2 - CARD_PADDING * 2 - GRID_GAP * (albumColumns - 1)) /
+      albumColumns
+  );
+  const genreLabels = Array.isArray(artistData?.genres)
+    ? artistData.genres.filter(Boolean).slice(0, 4)
+    : [];
+  const followersCount =
+    typeof artistData?.followers?.total === "number" ? artistData.followers.total : null;
+  const shouldCollapseBio = bio.length > BIO_COLLAPSE_LENGTH;
+  const visibleBio =
+    shouldCollapseBio && !isBioExpanded
+      ? `${bio.slice(0, BIO_COLLAPSE_LENGTH).trimEnd()}...`
+      : bio;
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      title: artistData?.name || "Artist",
+      headerBackTitle: "Back",
+    });
+  }, [artistData?.name, navigation]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadArtistPage = async () => {
+      setPageLoading(true);
+      setAlbumsLoading(true);
+      setBioLoading(true);
+      setIsBioExpanded(false);
+
+      let resolvedArtist = initialArtist;
+
+      try {
+        if (initialArtist?.id) {
+          const freshArtist = await getArtistById(initialArtist.id);
+          if (freshArtist) {
+            resolvedArtist = { ...initialArtist, ...freshArtist };
+          }
+        } else if (initialArtist?.name) {
+          const searchedArtist = await getArtistByName(initialArtist.name);
+          if (searchedArtist) {
+            resolvedArtist = { ...initialArtist, ...searchedArtist };
+          }
+        }
+      } catch (error) {
+        console.error("Artist lookup error:", error);
+      }
+
+      if (!isMounted) {
+        return;
+      }
+
+      setArtistData(resolvedArtist);
+
+      const spotifyImageUri = getArtistImageUrl(resolvedArtist) || getArtistImageUrl(initialArtist);
+      if (spotifyImageUri) {
+        setArtistImageUri(spotifyImageUri);
+      }
+
+      const artistName = resolvedArtist?.name || initialArtist?.name || "";
+      const artistId = resolvedArtist?.id || initialArtist?.id || "";
+
+      const [albumsResult, bioResult, fallbackImageResult] = await Promise.allSettled([
+        artistId ? getAlbumsByArtist(artistId) : Promise.resolve([]),
+        artistName ? getDiscogsArtistBio(artistName) : Promise.resolve(""),
+        !spotifyImageUri && artistName
+          ? getDiscogsArtistImage(artistName)
+          : Promise.resolve(spotifyImageUri || null),
+      ]);
+
+      if (!isMounted) {
+        return;
+      }
+
+      if (albumsResult.status === "fulfilled") {
+        setArtistAlbums(normalizeAlbums(albumsResult.value));
+      } else {
+        setArtistAlbums([]);
+      }
+      setAlbumsLoading(false);
+
+      if (bioResult.status === "fulfilled") {
+        setBio(sanitizeBioText(bioResult.value));
+      } else {
+        setBio("");
+      }
+      setBioLoading(false);
+
+      if (fallbackImageResult.status === "fulfilled") {
+        setArtistImageUri(fallbackImageResult.value || spotifyImageUri || null);
+      } else {
+        setArtistImageUri(spotifyImageUri || null);
+      }
+
+      setPageLoading(false);
+    };
+
+    loadArtistPage();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [initialArtist?.id, initialArtist?.name]);
+
+  if (pageLoading && !artistData?.name && !artistImageUri) {
+    return (
+      <SafeAreaView style={styles.loadingScreen}>
+        <ActivityIndicator size="large" color="#111827" />
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
       <ScrollView
-        contentContainerStyle={{
-          flexGrow: 1,
-          paddingBottom: insets.bottom + 20,
-        }}
+        contentContainerStyle={[
+          styles.contentContainer,
+          { paddingBottom: Math.max(insets.bottom, 16) + 24 },
+        ]}
+        showsVerticalScrollIndicator={false}
       >
-        <LinearGradient
-          colors={["transparent", "rgba(255,255,255,.95)"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={{
-            position: "absolute",
-            width: windowWidth,
-            height: windowHeight / 4,
-          }}
-        />
-        <View style={styles.container}>
-          <View style={styles.pageData}>
-            {artistData.images && artistData.images.length > 0 && (
-              <Image source={artistData.images[0]} style={styles.image} />
-            )}
-            <View style={styles.columnContainer}>
-              <Text style={{ padding: 5 }}>
-                {artistData.name || "Unknown Artist"}
-              </Text>
+        <View style={styles.heroShell}>
+          <LinearGradient
+            colors={["#fff5c4", "#ffffff"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.heroCard}
+          >
+            <View style={styles.heroTopRow}>
+              <View style={styles.artistImageFrame}>
+                {artistImageUri ? (
+                  <Image source={{ uri: artistImageUri }} style={styles.artistImage} />
+                ) : (
+                  <View style={styles.artistImageFallback}>
+                    <Ionicons name="person-outline" size={38} color="#4b5563" />
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.heroCopy}>
+                <Text style={styles.eyebrow}>Artist</Text>
+                <Text style={styles.artistName}>{artistData?.name || "Unknown Artist"}</Text>
+                <Text style={styles.heroSubcopy}>
+                  {bio
+                    ? "A closer look at the records, context, and catalog."
+                    : "Explore the catalog and open albums directly from here."}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.heroMetaRow}>
+              <StatPill
+                icon="albums-outline"
+                label={`${artistAlbums.length} album${artistAlbums.length === 1 ? "" : "s"}`}
+              />
+              {followersCount ? (
+                <StatPill icon="people-outline" label={`${formatCompactNumber(followersCount)} followers`} />
+              ) : null}
+            </View>
+
+            {genreLabels.length > 0 ? (
+              <View style={styles.genreRow}>
+                {genreLabels.map((genre) => (
+                  <GenreChip key={genre} genre={genre} />
+                ))}
+              </View>
+            ) : null}
+          </LinearGradient>
+        </View>
+
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <View>
+              <Text style={styles.sectionEyebrow}>About</Text>
+              <Text style={styles.sectionTitle}>Artist description</Text>
             </View>
           </View>
-          <View style={styles.bioContainer}>
-            <Text style={{ padding: 5 }}>
-              {bio && bio.length > BIO_MAX_LENGTH && !isBioExpanded
-                ? `${bio.substring(0, BIO_MAX_LENGTH)}... `
-                : bio}
-              {bio && bio.length > BIO_MAX_LENGTH && (
-                <Text
-                  style={styles.seeMoreText}
-                  onPress={() => setIsBioExpanded(!isBioExpanded)}
+
+          {bioLoading ? (
+            <View style={styles.loadingRow}>
+              <ActivityIndicator size="small" color="#111827" />
+              <Text style={styles.loadingText}>Loading description...</Text>
+            </View>
+          ) : bio ? (
+            <>
+              <Text style={styles.bioText}>{visibleBio}</Text>
+              {shouldCollapseBio ? (
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => setIsBioExpanded((current) => !current)}
+                  style={styles.readMoreButton}
                 >
-                  {isBioExpanded ? "See Less" : "See More"}
-                </Text>
-              )}
-            </Text>
-          </View>
-          <View style={styles.albumsContainer}>
-            <View style={styles.imageListContainer}>
-              {artistAlbums.map((album, index) => (
-                <View key={index} style={styles.albumItem}>
-                  <TouchableOpacity
-                    onPress={() =>
-                      navigation.push("AlbumPage", {
-                        album: album,
-                        key: Math.round(Math.random() * 10000000),
-                      })
-                    }
-                  >
-                    <Image
-                      source={{ uri: album.images[0].url }}
-                      style={styles.albumImage}
-                    />
-                  </TouchableOpacity>
-                  <Text style={styles.albumTitle} numberOfLines={2}>
-                    {album.name}
+                  <Text style={styles.readMoreText}>
+                    {isBioExpanded ? "Show less" : "Read more"}
                   </Text>
-                </View>
+                </TouchableOpacity>
+              ) : null}
+            </>
+          ) : (
+            <Text style={styles.emptySectionText}>
+              No artist description is available right now.
+            </Text>
+          )}
+        </View>
+
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <View>
+              <Text style={styles.sectionEyebrow}>Catalog</Text>
+              <Text style={styles.sectionTitle}>Albums</Text>
+            </View>
+            <View style={styles.countBadge}>
+              <Text style={styles.countBadgeText}>{artistAlbums.length}</Text>
+            </View>
+          </View>
+
+          {albumsLoading ? (
+            <View style={styles.loadingRow}>
+              <ActivityIndicator size="small" color="#111827" />
+              <Text style={styles.loadingText}>Loading albums...</Text>
+            </View>
+          ) : artistAlbums.length > 0 ? (
+            <View style={styles.albumGrid}>
+              {artistAlbums.map((album) => (
+                <AlbumTile
+                  key={album?.id || `${album?.name}-${album?.release_date}`}
+                  album={album}
+                  width={albumTileSize}
+                  onPress={() =>
+                    navigation.push("AlbumPage", {
+                      album,
+                      key: Math.round(Math.random() * 10000000),
+                    })
+                  }
+                />
               ))}
             </View>
-          </View>
-          <View style={styles.footer}>
-            
-            <Text style={styles.footerBrand}>bsides</Text>
-          </View>
+          ) : (
+            <View style={styles.emptyAlbumsState}>
+              <Ionicons name="disc-outline" size={24} color="#6b7280" />
+              <Text style={styles.emptySectionText}>
+                No albums are available for this artist right now.
+              </Text>
+            </View>
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
-    // paddingLeft: 20,
-    // paddingTop: 20,
-    //flexDirection: "row",
+    backgroundColor: "#f4f1e6",
   },
-  image: {
-    width: 100,
-    height: 100,
-    borderRadius: 3,
+  loadingScreen: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#f4f1e6",
   },
-  albumItem: {
-    width: 100,
-    marginBottom: 12,
+  contentContainer: {
+    paddingHorizontal: PAGE_PADDING,
+    paddingTop: 20,
+    gap: 18,
+  },
+  heroShell: {
+    borderRadius: 28,
+    overflow: "hidden",
+    shadowColor: "#111827",
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 4,
+  },
+  heroCard: {
+    padding: CARD_PADDING,
+    borderWidth: 1,
+    borderColor: "#f3e7a3",
+  },
+  heroTopRow: {
+    flexDirection: "row",
     alignItems: "center",
   },
-  albumImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 2,
-    marginBottom: 2,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
+  artistImageFrame: {
+    width: 122,
+    height: 122,
+    borderRadius: 26,
+    padding: 4,
+    backgroundColor: "rgba(255,255,255,0.72)",
+    shadowColor: "#111827",
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
     elevation: 3,
   },
-  albumTitle: {
+  artistImage: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 22,
+    backgroundColor: "#e5e7eb",
+  },
+  artistImageFallback: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 22,
+    backgroundColor: "#e5e7eb",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  heroCopy: {
+    flex: 1,
+    marginLeft: 16,
+  },
+  eyebrow: {
     fontSize: 12,
-    color: "#333",
-    textAlign: "center",
-    paddingHorizontal: 4,
-    lineHeight: 16,
+    fontWeight: "700",
+    letterSpacing: 1.1,
+    textTransform: "uppercase",
+    color: "#7c5d00",
+    marginBottom: 6,
   },
-  gradient: {
-    padding: 0,
-    position: "absolute",
+  artistName: {
+    fontSize: 28,
+    lineHeight: 32,
+    fontWeight: "800",
+    color: "#111827",
+    marginBottom: 8,
   },
-  pageData: {
-    zIndex: 3,
-    paddingTop: "20%",
-    paddingLeft: "5%",
-    flexDirection: "row",
+  heroSubcopy: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: "#4b5563",
   },
-
-  columnContainer: {
-    flexDirection: "column",
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-    height: 100,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-  },
-  button: {
-    padding: 10,
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1,
-    borderBottomWidth: 1,
-    borderBottomColor: "purple",
-    borderTopColor: "black",
-  },
-  buttonText: {},
-  modalView: {
-    margin: 20,
-    backgroundColor: "white",
-    borderRadius: 20,
-    padding: 40,
-
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  centeredView: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  input: {
-    backgroundColor: "white",
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    borderRadius: 10,
-    marginTop: 40,
-    width: 300,
-    background:
-      "linear-gradient(to right, rgba(255, 255, 255, 1), rgba(0, 0, 255, 0))",
-  },
-  listPreview: {
-    flexGrow: 0,
-    padding: 10,
-  },
-  selectedItem: {
-    backgroundColor: "grey",
-  },
-  itemText: {
-    fontSize: 16,
-  },
-  item: {
-    padding: 10,
-    borderBottomWidth: 1,
-    borderLeftWidth: 1,
-    borderRadius: 2,
-  },
-  albumsContainer: {
-    flex: 1,
-    paddingVertical: 0,
-    paddingHorizontal: 0,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  imageListContainer: {
+  heroMetaRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    justifyContent: "center",
-    alignItems: "flex-start",
-    width: "100%",
-    gap: 4,
+    gap: 10,
+    marginTop: 18,
   },
-  bioContainer: {
-    padding: 10,
-    flex: 1,
-    justifyContent: "center",
+  statPill: {
+    flexDirection: "row",
     alignItems: "center",
-    contentWrap: "wrap",
+    gap: 7,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.86)",
+    borderWidth: 1,
+    borderColor: "#f1f5f9",
   },
-  seeMoreText: {
-    color: "#007AFF",
+  statPillText: {
+    fontSize: 13,
     fontWeight: "600",
+    color: "#374151",
   },
-  footer: {
-    paddingVertical: 30,
-    paddingHorizontal: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    borderTopWidth: 1,
-    borderTopColor: "#E5E5E5",
-    marginTop: 20,
+  genreRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 14,
   },
-  footerText: {
+  genreChip: {
+    borderRadius: 999,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    backgroundColor: "#111827",
+  },
+  genreChipText: {
+    color: "#ffffff",
     fontSize: 12,
-    color: "#999",
+    fontWeight: "700",
+  },
+  sectionCard: {
+    backgroundColor: "#ffffff",
+    borderRadius: 26,
+    padding: CARD_PADDING,
+    shadowColor: "#111827",
+    shadowOpacity: 0.05,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 14,
+  },
+  sectionEyebrow: {
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.9,
+    textTransform: "uppercase",
+    color: "#9ca3af",
     marginBottom: 4,
   },
-  footerBrand: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#333",
-    letterSpacing: 1,
+  sectionTitle: {
+    fontSize: 21,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  countBadge: {
+    minWidth: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#f3f4f6",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 10,
+  },
+  countBadgeText: {
+    color: "#111827",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  loadingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 10,
+  },
+  loadingText: {
+    color: "#6b7280",
+    fontSize: 14,
+  },
+  bioText: {
+    fontSize: 15,
+    lineHeight: 24,
+    color: "#374151",
+  },
+  readMoreButton: {
+    alignSelf: "flex-start",
+    marginTop: 12,
+    paddingVertical: 6,
+  },
+  readMoreText: {
+    color: "#7c5d00",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  albumGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: GRID_GAP,
+  },
+  albumTile: {
+    marginBottom: 4,
+  },
+  albumCover: {
+    borderRadius: 10,
+    backgroundColor: "#e5e7eb",
+    marginBottom: 8,
+  },
+  albumCoverFallback: {
+    borderRadius: 10,
+    backgroundColor: "#e5e7eb",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  albumTitle: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "600",
+    color: "#111827",
+  },
+  albumSubtitle: {
+    fontSize: 12,
+    color: "#6b7280",
+    marginTop: 3,
+  },
+  emptyAlbumsState: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 18,
+    gap: 8,
+  },
+  emptySectionText: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: "#6b7280",
   },
 });
-
-export default ArtistPage;

@@ -80,6 +80,95 @@ export const getAllLists = async (limit = 5, offset = 0, viewerUid = null) => {
     console.log("This be throwing an error!");
   }
 };
+
+export const searchListsByTitle = async (title, page = 0, limit = 10) => {
+  const normalizedTitle = title?.trim();
+
+  if (!normalizedTitle) {
+    return [];
+  }
+
+  try {
+    const searchParams = new URLSearchParams({
+      title: normalizedTitle,
+      limit: String(limit),
+      offset: String(page * limit),
+    });
+    const requestUrl = `${API_BASE_URL}/lists?${searchParams.toString()}`;
+    const response = await fetch(requestUrl, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+    });
+    const json = await parseJsonSafely(response, "GET /lists title search");
+
+    if (!response.ok || !json) {
+      console.error("[searchListsByTitle] request failed", {
+        requestUrl,
+        status: response.status,
+        body: json,
+      });
+      return [];
+    }
+
+    const jsonData = Array.isArray(json?.data) ? json.data : [];
+    return Promise.all(jsonData.map(jsonToLists));
+  } catch (error) {
+    console.error("searchListsByTitle error:", error);
+    return [];
+  }
+};
+
+export const getListsByAlbumId = async (
+  albumId,
+  { offset = 0, limit = 20 } = {}
+) => {
+  const normalizedAlbumId = albumId?.trim?.();
+
+  if (!normalizedAlbumId) {
+    return { data: [], hasMore: false, totalCount: 0 };
+  }
+
+  try {
+    const searchParams = new URLSearchParams({
+      albumId: normalizedAlbumId,
+      limit: String(limit),
+      offset: String(offset),
+    });
+    const requestUrl = `${API_BASE_URL}/lists?${searchParams.toString()}`;
+    const response = await fetch(requestUrl, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+    });
+    const json = await parseJsonSafely(response, "GET /lists album lookup");
+
+    if (!response.ok || !json) {
+      console.error("[getListsByAlbumId] request failed", {
+        requestUrl,
+        status: response.status,
+        body: json,
+      });
+      return { data: [], hasMore: false, totalCount: 0 };
+    }
+
+    const rawLists = Array.isArray(json?.data) ? json.data : [];
+    const mappedLists = await Promise.all(rawLists.map(jsonToLists));
+
+    return {
+      data: mappedLists,
+      hasMore: Boolean(json?.hasMore),
+      totalCount: Number(json?.totalCount || 0),
+    };
+  } catch (error) {
+    console.error("getListsByAlbumId error:", error);
+    return { data: [], hasMore: false, totalCount: 0 };
+  }
+};
 export const getHasMore = async (limit = 5, offset = 0) => {
   const fetchData = {
     method: "GET",

@@ -7,6 +7,7 @@ import React, {
 import {
   getAlbum,
   getArtistById,
+  getAlbumsByArtist,
   getArtistPhotoByAlbum,
   getTrackListFromSpotify,
 } from "../api/SpotifyAPI";
@@ -35,7 +36,6 @@ import { getListByUID, patchAlbumList, postList } from "../api/ListAPI";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { ScrollView } from "react-native";
 import {
-  getAlbumCreditsByName,
   getAlbumDescriptionFromMusicBrainz,
   searchReleaseGroup,
 } from "../api/MusicBrainz";
@@ -73,30 +73,66 @@ const DetailStat = ({ label, value }) => (
   </View>
 );
 
-const PersonnelTab = ({ isFocused, albumData }) => {
-  const [credits, setCredits] = useState([]);
+const buildOtherAlbums = (albums, currentAlbumId) => {
+  if (!Array.isArray(albums)) {
+    return [];
+  }
+
+  const seen = new Set();
+
+  return albums
+    .filter((album) => {
+      const albumId = album?.id;
+      if (!albumId || albumId === currentAlbumId || seen.has(albumId)) {
+        return false;
+      }
+
+      seen.add(albumId);
+      return true;
+    })
+    .sort((left, right) => {
+      const leftDate = left?.release_date || "";
+      const rightDate = right?.release_date || "";
+      return rightDate.localeCompare(leftDate);
+    });
+};
+
+const OtherAlbumsTab = ({ isFocused, albumData }) => {
+  const navigation = useNavigation();
+  const [otherAlbums, setOtherAlbums] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (!isFocused) return;
+
     setLoading(true);
-    const getCredits = async () => {
-      if (!albumData?.name || !albumData?.artists?.[0]?.name) {
-        setCredits([]);
+    setError("");
+
+    const loadOtherAlbums = async () => {
+      const primaryArtistId = albumData?.artists?.[0]?.id;
+
+      if (!primaryArtistId) {
+        setOtherAlbums([]);
+        setError("Artist information is unavailable for this album.");
         setLoading(false);
         return;
       }
 
-      const fetchedCredits = await getAlbumCreditsByName(
-        albumData.name,
-        albumData.artists[0].name
-      );
-      setCredits(fetchedCredits);
-      setLoading(false);
+      try {
+        const fetchedAlbums = await getAlbumsByArtist(primaryArtistId);
+        setOtherAlbums(buildOtherAlbums(fetchedAlbums, albumData?.id));
+      } catch (fetchError) {
+        console.error("Error loading other albums:", fetchError);
+        setOtherAlbums([]);
+        setError("Could not load other albums right now.");
+      } finally {
+        setLoading(false);
+      }
     };
 
-    getCredits();
-  }, [albumData?.artists, albumData?.name, isFocused]);
+    loadOtherAlbums();
+  }, [albumData?.artists, albumData?.id, isFocused]);
 
   if (loading) {
     return (
@@ -111,16 +147,45 @@ const PersonnelTab = ({ isFocused, albumData }) => {
   }
 
   return (
-    <View>
-      {credits.length === 0 ? (
-        <Text>No personnel found.</Text>
+    <View style={styles.otherAlbumsContainer}>
+      {error ? (
+        <Text style={styles.otherAlbumsEmptyText}>{error}</Text>
+      ) : otherAlbums.length === 0 ? (
+        <Text style={styles.otherAlbumsEmptyText}>
+          No other albums found for this artist.
+        </Text>
       ) : (
-        <View>
-          {credits.map((item, index) => (
-            <Text key={`${item.name}-${index}`} style={styles.creditText}>
-              {item.name} — {item.role}
-              {item.track ? ` (Track: ${item.track})` : ""}
-            </Text>
+        <View style={styles.otherAlbumsGrid}>
+          {otherAlbums.map((item) => (
+            <TouchableOpacity
+              key={item.id}
+              style={styles.otherAlbumTile}
+              onPress={() =>
+                navigation.push("AlbumPage", {
+                  album: item,
+                  key: Math.round(Math.random() * 10000000),
+                })
+              }
+            >
+              {item?.images?.[0]?.url ? (
+                <Image
+                  source={{ uri: item.images[0].url }}
+                  style={styles.otherAlbumImage}
+                />
+              ) : (
+                <View style={[styles.otherAlbumImage, styles.otherAlbumFallback]}>
+                  <Ionicons name="disc-outline" size={22} color="#6b7280" />
+                </View>
+              )}
+              <Text style={styles.otherAlbumTitle} numberOfLines={2}>
+                {item?.name || "Untitled Album"}
+              </Text>
+              <Text style={styles.otherAlbumMeta} numberOfLines={1}>
+                {typeof item?.release_date === "string" && item.release_date.length >= 4
+                  ? item.release_date.slice(0, 4)
+                  : "Album"}
+              </Text>
+            </TouchableOpacity>
           ))}
         </View>
       )}
@@ -642,19 +707,19 @@ const AlbumPage = (route) => {
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => {
-                  setActiveTab("personnel");
+                  setActiveTab("otherAlbums");
                   setIndex(2);
                 }}
                 style={styles.tabButton}
               >
                 <Text
                   style={
-                    activeTab === "personnel"
+                    activeTab === "otherAlbums"
                       ? styles.activeTabText
                       : styles.inactiveTabText
                   }
                 >
-                  Personnel
+                  Other Albums
                 </Text>
               </TouchableOpacity>
             </View>
@@ -672,9 +737,60 @@ const AlbumPage = (route) => {
               {activeTab === "tracks" && (
                 <TracksTab isFocused={index === 1} trackList={trackList} />
               )}
-              {activeTab === "personnel" && (
-                <PersonnelTab albumData={albumData} isFocused={index === 2} />
+              {activeTab === "otherAlbums" && (
+                <OtherAlbumsTab albumData={albumData} isFocused={index === 2} />
               )}
+            </View>
+
+            <View style={styles.bottomNavSection}>
+              <Text style={styles.bottomNavTitle}>Explore this album</Text>
+              <View style={styles.bottomNavRow}>
+                <TouchableOpacity
+                  style={styles.bottomNavButton}
+                  onPress={() =>
+                    navigation.push("AlbumListsPage", {
+                      album: albumData,
+                      albumId: albumData?.id || album?.id || null,
+                    })
+                  }
+                >
+                  <View style={styles.bottomNavIconWrap}>
+                    <Ionicons name="list-outline" size={20} color="#111827" />
+                  </View>
+                  <View style={styles.bottomNavMeta}>
+                    <Text style={styles.bottomNavLabel}>Lists</Text>
+                    <Text style={styles.bottomNavCaption}>
+                      See every list that includes it
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#9ca3af" />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.bottomNavButton}
+                  onPress={() =>
+                    navigation.push("AlbumReviewsPage", {
+                      album: albumData,
+                      albumId: albumData?.id || album?.id || null,
+                    })
+                  }
+                >
+                  <View style={styles.bottomNavIconWrap}>
+                    <Ionicons
+                      name="chatbubble-ellipses-outline"
+                      size={20}
+                      color="#111827"
+                    />
+                  </View>
+                  <View style={styles.bottomNavMeta}>
+                    <Text style={styles.bottomNavLabel}>Reviews</Text>
+                    <Text style={styles.bottomNavCaption}>
+                      Read what other listeners wrote
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#9ca3af" />
+                </TouchableOpacity>
+              </View>
             </View>
 
             {/* Action Modal - Choose Review or Add to List */}
@@ -1373,6 +1489,92 @@ const styles = StyleSheet.create({
   },
   tabContent: {
     padding: 16,
+  },
+  otherAlbumsContainer: {
+    minHeight: 120,
+  },
+  otherAlbumsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+  otherAlbumTile: {
+    width: "30.5%",
+    minWidth: 92,
+  },
+  otherAlbumImage: {
+    width: "100%",
+    aspectRatio: 1,
+    borderRadius: 8,
+    backgroundColor: "#e5e7eb",
+    marginBottom: 8,
+  },
+  otherAlbumFallback: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  otherAlbumTitle: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "600",
+    color: "#111827",
+  },
+  otherAlbumMeta: {
+    marginTop: 4,
+    fontSize: 12,
+    color: "#6b7280",
+  },
+  otherAlbumsEmptyText: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: "#6b7280",
+  },
+  bottomNavSection: {
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    gap: 12,
+  },
+  bottomNavTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#111827",
+  },
+  bottomNavRow: {
+    gap: 12,
+  },
+  bottomNavButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: "#f8fafc",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+  },
+  bottomNavIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+  },
+  bottomNavMeta: {
+    flex: 1,
+    minWidth: 0,
+  },
+  bottomNavLabel: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  bottomNavCaption: {
+    marginTop: 3,
+    fontSize: 13,
+    color: "#6b7280",
   },
   detailsContainer: {
     gap: 20,

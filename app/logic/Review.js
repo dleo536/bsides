@@ -218,6 +218,7 @@ export class Review {
       releaseGroupMbId: this.releaseGroupMbId,
       releaseMbId: this.releaseMbId,
       artistMbId: this.artistMbId,
+      spotifyAlbumId: this.spotifyAlbumId,
       albumTitleSnapshot: this.albumTitleSnapshot,
       artistNameSnapshot: this.artistNameSnapshot,
       coverUrlSnapshot: this.coverUrlSnapshot,

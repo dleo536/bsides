@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useLayoutEffect, useState } from "react";
 import {
   getAlbum,
   getAlbumsByName,
@@ -46,6 +46,7 @@ const UserPage = () => {
   const windowWidth = Dimensions.get("window").width;
   const windowHeight = Dimensions.get("window").height;
 
+  const navigation = useNavigation();
   const route = useRoute();
   const { user } = route.params; // 👈 user object passed in
 
@@ -73,6 +74,12 @@ const UserPage = () => {
   const profileUsername = profileUser?.username || user?.username || "";
   const followersCount = profileUser?.followersCount ?? 0;
   const followingCount = profileUser?.followingCount ?? 0;
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      title: profileUsername ? `@${profileUsername}` : profileDisplayName,
+    });
+  }, [navigation, profileDisplayName, profileUsername]);
 
   useEffect(() => {
     setProfileUser(user);

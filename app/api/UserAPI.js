@@ -304,8 +304,96 @@ export const getUsersByUsername = async (username) => {
     console.log("This be throwing an error!");
   }
 };
+
+export const getSignupAvailability = async ({ username, email } = {}) => {
+  const searchParams = new URLSearchParams();
+
+  if (typeof username === "string" && username.trim()) {
+    searchParams.append("username", username.trim());
+  }
+
+  if (typeof email === "string" && email.trim()) {
+    searchParams.append("email", email.trim());
+  }
+
+  if (![...searchParams.keys()].length) {
+    return {
+      usernameAvailable: null,
+      emailAvailable: null,
+      usernameValid: null,
+      emailValid: null,
+    };
+  }
+
+  const requestUrl = `${API_BASE_URL}/users/availability?${searchParams.toString()}`;
+
+  try {
+    const response = await fetch(requestUrl, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+    });
+    const data = await parseJsonSafely(response, "GET /users/availability");
+
+    if (!response.ok || !data) {
+      console.error("[getSignupAvailability] request failed", {
+        requestUrl,
+        status: response.status,
+        body: data,
+      });
+      throw new Error(data?.message || "Could not check account availability");
+    }
+
+    return data;
+  } catch (error) {
+    console.error("getSignupAvailability error:", error);
+    throw error;
+  }
+};
+
+export const createBackendUserProfile = async ({
+  oauthId,
+  email,
+  username,
+  firstName,
+  lastName,
+} = {}) => {
+  const requestUrl = `${API_BASE_URL}/users`;
+
+  try {
+    const response = await fetch(requestUrl, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        oauthId,
+        email,
+        username,
+        firstName,
+        lastName,
+      }),
+    });
+    const data = await parseJsonSafely(response, "POST /users");
+
+    if (!response.ok) {
+      const error = new Error(data?.message || "Could not create user profile");
+      error.status = response.status;
+      error.payload = data;
+      throw error;
+    }
+
+    return data;
+  } catch (error) {
+    console.error("createBackendUserProfile error:", error);
+    throw error;
+  }
+};
 export const patchUser = async (uid, backlogListId, favoriteListId) => {
-  print(
+  console.log(
     "Patching user with uid:",
     uid,
     "backlogListId:",
@@ -314,8 +402,9 @@ export const patchUser = async (uid, backlogListId, favoriteListId) => {
     favoriteListId
   );
   try {
+    const resolvedIdentifier = (await resolveBackendUserId(uid)) || uid;
     const response = await fetch(
-      `${API_BASE_URL}/users/${uid}`,
+      `${API_BASE_URL}/users/${resolvedIdentifier}`,
       {
         method: "PATCH",
         headers: {

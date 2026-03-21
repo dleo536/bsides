@@ -17,8 +17,9 @@ import {
   getArtistsByName,
   searchNewAlbums,
 } from "../api/SpotifyAPI";
-import { getMusicians } from "../api/Discogs";
+import { searchListsByTitle } from "../api/ListAPI";
 import { getProfileImageForUser, getUsersByUsername } from "../api/UserAPI";
+import ListElement from "../components/listElement";
 import defaultProfileImage from "../../assets/defaultProfilePicture.png";
 
 const SEARCH_LIMIT = 10;
@@ -97,8 +98,8 @@ const SearchPage = () => {
         response = await getArtistsByName(text, pageNumber, SEARCH_LIMIT);
       } else if (type === "User") {
         response = await getUsersByUsername(text);
-      } else if (type === "Musician") {
-        response = await getMusicians(text);
+      } else if (type === "Lists") {
+        response = await searchListsByTitle(text, pageNumber, SEARCH_LIMIT);
       }
 
       const normalized = Array.isArray(response) ? response : [];
@@ -281,14 +282,19 @@ const SearchPage = () => {
       );
     }
 
-    if (selectedButton === "Musician") {
+    if (selectedButton === "Lists") {
       return (
-        <View style={styles.resultRow}>
-          <Image source={{ uri: item?.cover_image }} style={styles.resultImage} />
-          <View style={styles.resultMeta}>
-            <Text style={styles.resultPrimaryText}>{item?.title}</Text>
-          </View>
-        </View>
+        <TouchableOpacity
+          onPress={() =>
+            navigation.push("ListPage", {
+              list: item,
+              key: Math.round(Math.random() * 10000000),
+            })
+          }
+          activeOpacity={0.9}
+        >
+          <ListElement list={item} />
+        </TouchableOpacity>
       );
     }
 
@@ -325,7 +331,7 @@ const SearchPage = () => {
             </View>
 
             <View style={styles.searchButtonContainer}>
-              {["Artist", "Album", "User", "Musician"].map((option) => (
+              {["Artist", "Album", "User", "Lists"].map((option) => (
                 <View key={option} style={styles.searchButton}>
                   <Button
                     title={option}

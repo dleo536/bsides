@@ -1,6 +1,7 @@
 import React from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createStackNavigator } from "@react-navigation/stack";
+import { getFocusedRouteNameFromRoute } from "@react-navigation/native";
 import HomePage from "../screens/HomePage";
 import SearchPage from "../screens/SearchPage";
 import ProfilePage from "../screens/ProfilePage";
@@ -14,6 +15,8 @@ import UserPage from "../screens/UserPage";
 import ReviewPage from "../screens/ReviewPage";
 import ListPage from "../screens/ListPage";
 import LikedListsPage from "../screens/LikedListsPage";
+import AlbumListsPage from "../screens/AlbumListsPage";
+import AlbumReviewsPage from "../screens/AlbumReviewsPage";
 import YearPicker from "../screens/YearPicker";
 import YearResults from "../screens/YearResults";
 import CountryPicker from "../screens/CountryPicker";
@@ -28,18 +31,23 @@ const AppNavigator = () => {
       <Tab.Screen
         name="Home"
         component={HomeStack}
-        options={{
-          title: "b-sides",
-          tabBarIcon: () => {
-            return (
-              <MaterialCommunityIcons
-                name="record-player"
-                size={24}
-                color="black"
-              />
-            );
-          },
-          // headerShown: false,
+        options={({ route }) => {
+          const focusedRouteName = getFocusedRouteNameFromRoute(route) ?? "HomePage";
+          const shouldShowTabHeader = focusedRouteName === "HomePage";
+
+          return {
+            title: "b-sides",
+            headerShown: shouldShowTabHeader,
+            tabBarIcon: () => {
+              return (
+                <MaterialCommunityIcons
+                  name="record-player"
+                  size={24}
+                  color="black"
+                />
+              );
+            },
+          };
         }}
       />
       <Tab.Screen
@@ -107,6 +115,24 @@ function SearchStack() {
         }}
       />
       <Stack.Screen
+        name="AlbumListsPage"
+        component={AlbumListsPage}
+        options={{
+          title: "Lists",
+          headerBackTitle: "Back",
+          headerBackTitleStyle: { fontSize: 10 },
+        }}
+      />
+      <Stack.Screen
+        name="AlbumReviewsPage"
+        component={AlbumReviewsPage}
+        options={{
+          title: "Reviews",
+          headerBackTitle: "Back",
+          headerBackTitleStyle: { fontSize: 10 },
+        }}
+      />
+      <Stack.Screen
         name="ArtistPage"
         component={ArtistPage}
         options={{
@@ -120,6 +146,20 @@ function SearchStack() {
         options={{
           headerBackTitle: "Back",
           headerBackTitleStyle: { fontSize: 10 },
+        }}
+      />
+      <Stack.Screen
+        name="ListPage"
+        component={ListPage}
+        options={{
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="ReviewPage"
+        component={ReviewPage}
+        options={{
+          headerShown: false,
         }}
       />
       <Stack.Screen
@@ -181,8 +221,34 @@ function HomeStack() {
         }}
       />
       <Stack.Screen
+        name="AlbumListsPage"
+        component={AlbumListsPage}
+        options={{
+          title: "Lists",
+          headerBackTitle: "Back",
+          headerBackTitleStyle: { fontSize: 10 },
+        }}
+      />
+      <Stack.Screen
+        name="AlbumReviewsPage"
+        component={AlbumReviewsPage}
+        options={{
+          title: "Reviews",
+          headerBackTitle: "Back",
+          headerBackTitleStyle: { fontSize: 10 },
+        }}
+      />
+      <Stack.Screen
         name="ArtistPage"
         component={ArtistPage}
+        options={{
+          headerBackTitle: "Back",
+          headerBackTitleStyle: { fontSize: 10 },
+        }}
+      />
+      <Stack.Screen
+        name="UserPage"
+        component={UserPage}
         options={{
           headerBackTitle: "Back",
           headerBackTitleStyle: { fontSize: 10 },
@@ -223,6 +289,47 @@ function ProfileStack() {
       <Stack.Screen
         name="AlbumPage"
         component={AlbumPage}
+        options={{
+          headerBackTitle: "Back",
+          headerBackTitleStyle: { fontSize: 10 },
+        }}
+      />
+      <Stack.Screen
+        name="AlbumListsPage"
+        component={AlbumListsPage}
+        options={{
+          title: "Lists",
+          headerBackTitle: "Back",
+          headerBackTitleStyle: { fontSize: 10 },
+        }}
+      />
+      <Stack.Screen
+        name="AlbumReviewsPage"
+        component={AlbumReviewsPage}
+        options={{
+          title: "Reviews",
+          headerBackTitle: "Back",
+          headerBackTitleStyle: { fontSize: 10 },
+        }}
+      />
+      <Stack.Screen
+        name="ReviewPage"
+        component={ReviewPage}
+        options={{
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="ArtistPage"
+        component={ArtistPage}
+        options={{
+          headerBackTitle: "Back",
+          headerBackTitleStyle: { fontSize: 10 },
+        }}
+      />
+      <Stack.Screen
+        name="UserPage"
+        component={UserPage}
         options={{
           headerBackTitle: "Back",
           headerBackTitleStyle: { fontSize: 10 },
