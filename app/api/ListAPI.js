@@ -447,7 +447,6 @@ export const postList = async (uid, description, name) => {
       title: name || "Untitled List",
       slug,
       listType: "custom",
-      isSystem: false,
       visibility: "public",
       description: description || null,
     };
@@ -510,10 +509,6 @@ export const postListWithType = async (uid, type) => {
       title,
       slug,
       listType,
-      isSystem:
-        normalizedType === "backlog" ||
-        normalizedType === "favorite" ||
-        normalizedType === "favorites",
       visibility: "public",
       description: null,
     };

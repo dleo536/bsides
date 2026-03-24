@@ -23,7 +23,6 @@ import { postListWithType } from "../api/ListAPI";
 import {
   createBackendUserProfile,
   getSignupAvailability,
-  patchUser,
 } from "../api/UserAPI";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -387,7 +386,6 @@ export default function SignUpScreen() {
 
       try {
         await createBackendUserProfile({
-          oauthId: localUser.uid,
           email: normalizedEmail,
           username: normalizedUsername,
           firstName: normalizedUsername,
@@ -405,27 +403,16 @@ export default function SignUpScreen() {
         return;
       }
 
-      let backlogListId = null;
-      let favoriteListId = null;
-
       try {
-        backlogListId = await postListWithType(localUser.uid, "backlog");
+        await postListWithType(localUser.uid, "backlog");
       } catch (error) {
         console.error("Failed to create backlog list:", error);
       }
 
       try {
-        favoriteListId = await postListWithType(localUser.uid, "favorite");
+        await postListWithType(localUser.uid, "favorite");
       } catch (error) {
         console.error("Failed to create favorites list:", error);
-      }
-
-      try {
-        if (backlogListId || favoriteListId) {
-          await patchUser(localUser.uid, backlogListId, favoriteListId);
-        }
-      } catch (error) {
-        console.error("Failed to patch default lists onto user:", error);
       }
 
       navigation.replace("Profile Picture");

@@ -407,35 +407,6 @@ export const createBackendUserProfile = async ({
     throw error;
   }
 };
-export const patchUser = async (uid, backlogListId, favoriteListId) => {
-  try {
-    const response = await apiFetch(
-      "/users/me",
-      {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({
-          backlogListId: backlogListId,
-          favoriteListId: favoriteListId,
-        }),
-      },
-      { authRequired: true }
-    );
-    const data = await parseJsonSafely(response, "PATCH /users/me");
-
-    if (response.ok) {
-      return data;
-    } else {
-      console.error("Error:", data);
-      return data;
-    }
-  } catch (error) {
-    console.error("Fetch error:", error);
-  }
-};
 export const followUser = async (currentUid, targetUserId) => {
   if (!currentUid || !targetUserId) {
     throw new Error("currentUid and targetUserId are required");
