@@ -1,271 +1,81 @@
-import React, { useState, useEffect, useCallback } from "react";
-import {
-  View,
-  Text,
-  FlatList,
-  ActivityIndicator,
-  StyleSheet,
-  Image,
-} from "react-native";
-import axios from "axios";
+import API_BASE_URL from "../config/api";
 
-const CLIENT_ID = "35328aeb78ec43cbbb12afc948cdc687";
-const SECRET = "e284561d79744d4db2086e526e9d15d0";
-const redirectUrl = "eg:http://localhost:8080";
+const albumCache = new Map();
+const artistCache = new Map();
+const albumTracksCache = new Map();
+const artistAlbumsCache = new Map();
 
-const authorizationEndpoint = "https://accounts.spotify.com/authorize";
-const tokenEndpoint = "https://accounts.spotify.com/api/token";
-const scope = "user-read-private user-read-email";
-
-let cachedToken = null;
-let tokenExpiryTime = null;
-
-const getAccessToken = async () => {
-  const currentTime = Date.now();
-
-  if (cachedToken && tokenExpiryTime && currentTime < tokenExpiryTime) {
-    return cachedToken;
+const parseJsonSafely = async (response, label) => {
+  const raw = await response.text();
+  if (!raw || !raw.trim()) {
+    return null;
   }
-  const clientId = "35328aeb78ec43cbbb12afc948cdc687";
-  const clientSecret = "e284561d79744d4db2086e526e9d15d0";
-  const tokenUrl = "https://accounts.spotify.com/api/token";
-  const credentials = btoa(`${clientId}:${clientSecret}`); // Encode client_id:client_secret in Base64
 
-  const response = await fetch(tokenUrl, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${credentials}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: "grant_type=client_credentials",
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`${label} returned invalid JSON`);
+  }
+};
+
+const createCacheKey = (path, query = {}) =>
+  `${path}?${Object.entries(query)
+    .filter(([, value]) => value !== undefined && value !== null && value !== "")
+    .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join("&")}`;
+
+const getCachedRequest = (cache, key, loader) => {
+  if (!cache.has(key)) {
+    cache.set(
+      key,
+      Promise.resolve()
+        .then(loader)
+        .catch((error) => {
+          cache.delete(key);
+          throw error;
+        })
+    );
+  }
+
+  return cache.get(key);
+};
+
+const buildRequestUrl = (path, query = {}) => {
+  const url = new URL(
+    `${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`
+  );
+
+  Object.entries(query).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === "") {
+      return;
+    }
+
+    url.searchParams.set(key, String(value));
   });
+
+  return url.toString();
+};
+
+const spotifyRequest = async (path, query = {}, label = path) => {
+  const response = await fetch(buildRequestUrl(path, query), {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+  });
+
+  const data = await parseJsonSafely(response, label);
 
   if (!response.ok) {
-    throw new Error(`Failed to get access token: ${response.statusText}`);
+    throw new Error(
+      data?.message ||
+        `${label} failed with status ${response.status}`
+    );
   }
 
-  const data = await response.json();
-  console.log(data.access_token);
-  cachedToken = data.access_token;
-  // Set expiry time (current time + expires_in * 1000 milliseconds)
-  tokenExpiryTime = currentTime + data.expires_in * 1000;
-
-  return cachedToken; // Returns the access token
-};
-
-const fetchAlbum = async (albumID, accessToken) => {
-  const url = `https://api.spotify.com/v1/albums/${albumID}`;
-
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
-
-  const data = await response.json();
-
-  return data; // Returns album name
-};
-const fetchAlbumsByName = async (
-  searchValue,
-  accessToken,
-  limit = 10,
-  offset = 0
-) => {
-  const url = `https://api.spotify.com/v1/search?q=${searchValue}&type=album&limit=${limit}&offset=${offset}`;
-
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
-
-  const data = await response.json();
-
-  return data; // Returns album name
-};
-const fetchAlbumCover = async (albumID, accessToken) => {
-  const url = `https://api.spotify.com/v1/albums/${albumID}`;
-
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
-
-  const data = await response.json();
-
-  return data.images[1].url; // Returns album name
-};
-const fetchArtistPhotoByAlbum = async (albumID, accessToken) => {
-  const url = `https://api.spotify.com/v1/albums/${albumID}`;
-
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
-  const data = await response.json();
-  const artistID = data.artists[0].id;
-  try {
-    const artistPhotoURL = await fetchArtistImage(artistID, accessToken);
-    return artistPhotoURL;
-  } catch (error) {
-    console.error("Error fetching artist image:", error);
-  }
-};
-const fetchArtistImage = async (artistID, accessToken) => {
-  const url = `https://api.spotify.com/v1/artists/${artistID}`;
-
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
-  const data = await response.json();
-
-  return data.images[0].url; // Returns artist photo
-};
-const fetchArtist = async (artistID, accessToken) => {
-  const url = `https://api.spotify.com/v1/artists/${artistID}`;
-
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
-
-  const data = await response.json();
   return data;
-};
-const fetchArtistsByName = async (
-  searchValue,
-  accessToken,
-  limit = 10,
-  offset = 0
-) => {
-  const query = encodeURIComponent(searchValue);
-  const url = `https://api.spotify.com/v1/search?q=${searchValue}&type=artist&limit=${limit}&offset=${offset}`;
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
-  const data = await response.json();
-
-  return data; // Returns artist photo
-};
-const fetchArtistAlbums = async (artistID, accessToken) => {
-  const url = `https://api.spotify.com/v1/artists/${artistID}/albums?include_groups=album`;
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
-  const data = await response.json();
-
-  return data.items; // Returns artist albums
-};
-const fetchTrackList = async (albumID, accessToken) => {
-  const url = `https://api.spotify.com/v1/albums/${albumID}/tracks`;
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
-  const data = await response.json();
-  //console.log("********data: ", JSON.stringify(data));
-
-  return data.items; // Returns track list
-};
-const fetchArtistByName = async (artistName, accessToken) => {
-  const url = `https://api.spotify.com/v1/search?q=${artistName}&type=artist`;
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
-  const data = await response.json();
-  return data.artists.items[0];
-};
-
-export const getAlbumName = async (albumID) => {
-  const token = await getAccessToken(); // Wait for access token
-  const album = await fetchAlbum(albumID, token); // Wait for album data
-
-  return album.name; // Return resolved album name
-};
-export const getAlbum = async (albumID) => {
-  const alb = getAccessToken()
-    .then((token) => fetchAlbum(albumID, token))
-    .then((album) => {
-      return album;
-    });
-  return alb;
-};
-export const getAlbumCover = async (albumID) => {
-  const alb = getAccessToken()
-    .then((token) => fetchAlbumCover(albumID, token))
-    .then((album) => {
-      return album;
-    });
-  return alb;
-};
-export const getAlbumsByName = async (albumName, page = 0, limit = 10) => {
-  console.log(limit);
-
-  const offset = page * limit;
-  const alb = getAccessToken()
-    .then((token) => fetchAlbumsByName(albumName, token, limit, offset))
-    .then((albums) => {
-      return (albums?.albums?.items || []).filter(isFullAlbumRelease);
-    });
-  return alb;
-};
-export const getArtistPhotoByAlbum = async (albumID) => {
-  const token = await getAccessToken();
-  const photoURL = await fetchArtistPhotoByAlbum(albumID, token);
-  console.log("ummmmmmm", photoURL);
-  return photoURL;
-};
-export const getArtistById = async (artistID) => {
-  const token = await getAccessToken();
-  const artist = await fetchArtist(artistID, token);
-  return artist;
-};
-export const getArtistsByName = async (artistName, page = 0, limit = 10) => {
-  const offset = page * limit;
-  const artists = getAccessToken()
-    .then((token) => fetchArtistsByName(artistName, token, limit, offset))
-    .then((artists) => {
-      return artists.artists.items;
-    });
-  return artists;
-};
-export const getArtistByName = async (artistName) => {
-  const token = await getAccessToken();
-  const artist = await fetchArtistByName(artistName, token);
-  return artist;
-};
-export const getAlbumsByArtist = async (artistID) => {
-  const token = await getAccessToken();
-  const albums = await fetchArtistAlbums(artistID, token);
-  return albums;
-};
-export const getTrackListFromSpotify = async (albumID) => {
-  const token = await getAccessToken();
-  const trackList = await fetchTrackList(albumID, token);
-  return trackList;
 };
 
 const resolveMarket = (market) => {
@@ -286,6 +96,11 @@ const resolveMarket = (market) => {
   return "US";
 };
 
+const isFullAlbumRelease = (album) =>
+  typeof album?.album_type === "string"
+    ? album.album_type.toLowerCase() === "album"
+    : true;
+
 export const toAlbumCardModel = (album) => ({
   id: album?.id ?? `${album?.name || "album"}-${album?.release_date || ""}`,
   title: album?.name || "Untitled Album",
@@ -298,10 +113,109 @@ export const toAlbumCardModel = (album) => ({
   spotifyAlbum: album,
 });
 
-const isFullAlbumRelease = (album) =>
-  typeof album?.album_type === "string"
-    ? album.album_type.toLowerCase() === "album"
-    : true;
+export const getAlbum = async (albumID) => {
+  if (!albumID) {
+    return null;
+  }
+
+  const cacheKey = createCacheKey(`/spotify/albums/${albumID}`);
+  return getCachedRequest(albumCache, cacheKey, () =>
+    spotifyRequest(`/spotify/albums/${encodeURIComponent(albumID)}`)
+  );
+};
+
+export const getAlbumName = async (albumID) => {
+  const album = await getAlbum(albumID);
+  return album?.name || null;
+};
+
+export const getAlbumCover = async (albumID) => {
+  const album = await getAlbum(albumID);
+  return album?.images?.[1]?.url || album?.images?.[0]?.url || null;
+};
+
+export const getAlbumsByName = async (albumName, page = 0, limit = 10) => {
+  const offset = page * limit;
+  const data = await spotifyRequest(
+    "/spotify/albums/search",
+    {
+      q: albumName,
+      limit,
+      offset,
+    },
+    "Spotify album search"
+  );
+
+  return (data?.albums?.items || []).filter(isFullAlbumRelease);
+};
+
+export const getArtistById = async (artistID) => {
+  if (!artistID) {
+    return null;
+  }
+
+  const cacheKey = createCacheKey(`/spotify/artists/${artistID}`);
+  return getCachedRequest(artistCache, cacheKey, () =>
+    spotifyRequest(`/spotify/artists/${encodeURIComponent(artistID)}`)
+  );
+};
+
+export const getArtistPhotoByAlbum = async (albumID) => {
+  const album = await getAlbum(albumID);
+  const primaryArtistId = album?.artists?.[0]?.id;
+
+  if (!primaryArtistId) {
+    return null;
+  }
+
+  const artist = await getArtistById(primaryArtistId);
+  return artist?.images?.[0]?.url || null;
+};
+
+export const getArtistsByName = async (artistName, page = 0, limit = 10) => {
+  const offset = page * limit;
+  const data = await spotifyRequest(
+    "/spotify/artists/search",
+    {
+      q: artistName,
+      limit,
+      offset,
+    },
+    "Spotify artist search"
+  );
+
+  return Array.isArray(data?.artists?.items) ? data.artists.items : [];
+};
+
+export const getArtistByName = async (artistName) => {
+  return spotifyRequest(
+    "/spotify/artists/by-name",
+    { name: artistName },
+    "Spotify artist lookup"
+  );
+};
+
+export const getAlbumsByArtist = async (artistID) => {
+  if (!artistID) {
+    return [];
+  }
+
+  const cacheKey = createCacheKey(`/spotify/artists/${artistID}/albums`);
+  return getCachedRequest(artistAlbumsCache, cacheKey, () =>
+    spotifyRequest(`/spotify/artists/${encodeURIComponent(artistID)}/albums`)
+  );
+};
+
+export const getTrackListFromSpotify = async (albumID) => {
+  if (!albumID) {
+    return [];
+  }
+
+  const cacheKey = createCacheKey(`/spotify/albums/${albumID}/tracks`);
+  return getCachedRequest(albumTracksCache, cacheKey, () =>
+    spotifyRequest(`/spotify/albums/${encodeURIComponent(albumID)}/tracks`)
+  );
+};
 
 const searchAlbumCards = async ({
   query,
@@ -309,26 +223,18 @@ const searchAlbumCards = async ({
   offset = 0,
   market,
 }) => {
-  const token = await getAccessToken();
   const resolvedMarket = resolveMarket(market);
-  const encodedQuery = encodeURIComponent(query);
-  const url = `https://api.spotify.com/v1/search?q=${encodedQuery}&type=album&limit=${limit}&offset=${offset}&market=${resolvedMarket}`;
-
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${token}`,
+  const data = await spotifyRequest(
+    "/spotify/albums/search",
+    {
+      q: query,
+      limit,
+      offset,
+      market: resolvedMarket,
     },
-  });
+    "Spotify album card search"
+  );
 
-  if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(
-      `Spotify search failed (${response.status}): ${errorBody?.slice?.(0, 180) || "unknown error"}`
-    );
-  }
-
-  const data = await response.json();
   const rawAlbumItems = Array.isArray(data?.albums?.items) ? data.albums.items : [];
   const albumItems = rawAlbumItems.filter(isFullAlbumRelease);
   const total = data?.albums?.total || 0;
@@ -379,3 +285,5 @@ export const searchNewAlbumsByMarket = async (
     market: countryCode,
   });
 };
+
+export const getAlbumList = getAlbumsByName;

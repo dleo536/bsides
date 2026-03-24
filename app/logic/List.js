@@ -144,7 +144,6 @@ export class List {
    */
   toCreateDto() {
     return {
-      ownerId: this.ownerId,
       title: this.title,
       slug: this.slug || this.generateSlug(),
       description: this.description,

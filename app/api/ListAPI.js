@@ -1,8 +1,8 @@
 import { List } from "../logic/List";
+import { apiFetch } from "./apiClient";
 import {
   getUsernameByUID,
   getFullUserByUid,
-  resolveBackendUserId,
 } from "./UserAPI";
 import API_BASE_URL from "../config/api";
 
@@ -48,17 +48,11 @@ export const getAllLists = async (limit = 5, offset = 0, viewerUid = null) => {
       limit: String(limit),
       offset: String(offset),
     });
-    if (viewerUid) {
-      const viewerId = await resolveBackendUserId(viewerUid);
-      if (viewerId) {
-        searchParams.append("viewerId", viewerId);
-      } else {
-        searchParams.append("viewerUid", viewerUid);
-      }
-    }
 
     const requestUrl = `${API_BASE_URL}/lists?${searchParams.toString()}`;
-    const response = await fetch(requestUrl, fetchData);
+    const response = await apiFetch(requestUrl, fetchData, {
+      authRequired: Boolean(viewerUid),
+    });
     const json = await parseJsonSafely(response, "GET /lists");
 
     if (!response.ok || !json) {
@@ -297,48 +291,23 @@ export const getListById = async (listId) => {
   }
 };
 
-const resolveViewerId = async (currentUid) => {
-  if (!currentUid) {
-    return null;
-  }
-
-  const viewerId = await resolveBackendUserId(currentUid);
-  if (viewerId) {
-    return viewerId;
-  }
-
-  return currentUid;
-};
-
 export const likeList = async (currentUid, listId) => {
   if (!currentUid || !listId) {
     throw new Error("currentUid and listId are required");
   }
 
-  const viewerId = await resolveViewerId(currentUid);
-  if (!viewerId) {
-    throw new Error("Unable to resolve current user id");
-  }
-
-  const requestUrl = `${API_BASE_URL}/lists/${encodeURIComponent(
+  const response = await apiFetch(`/lists/${encodeURIComponent(
     listId
-  )}/like?viewerId=${encodeURIComponent(viewerId)}`;
-
-  const response = await fetch(requestUrl, {
+  )}/like`, {
     method: "POST",
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
     },
-  });
+  }, { authRequired: true });
   const data = await parseJsonSafely(response, "POST /lists/:id/like");
 
   if (!response.ok) {
-    console.error("[likeList] request failed", {
-      requestUrl,
-      status: response.status,
-      body: data,
-    });
     throw new Error(data?.message || "Failed to like list");
   }
 
@@ -350,30 +319,18 @@ export const unlikeList = async (currentUid, listId) => {
     throw new Error("currentUid and listId are required");
   }
 
-  const viewerId = await resolveViewerId(currentUid);
-  if (!viewerId) {
-    throw new Error("Unable to resolve current user id");
-  }
-
-  const requestUrl = `${API_BASE_URL}/lists/${encodeURIComponent(
+  const response = await apiFetch(`/lists/${encodeURIComponent(
     listId
-  )}/like?viewerId=${encodeURIComponent(viewerId)}`;
-
-  const response = await fetch(requestUrl, {
+  )}/like`, {
     method: "DELETE",
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
     },
-  });
+  }, { authRequired: true });
   const data = await parseJsonSafely(response, "DELETE /lists/:id/like");
 
   if (!response.ok) {
-    console.error("[unlikeList] request failed", {
-      requestUrl,
-      status: response.status,
-      body: data,
-    });
     throw new Error(data?.message || "Failed to unlike list");
   }
 
@@ -385,30 +342,18 @@ export const getListLikeState = async (currentUid, listId) => {
     return { liked: false, likesCount: 0 };
   }
 
-  const viewerId = await resolveViewerId(currentUid);
-  if (!viewerId) {
-    return { liked: false, likesCount: 0 };
-  }
-
-  const requestUrl = `${API_BASE_URL}/lists/${encodeURIComponent(
+  const response = await apiFetch(`/lists/${encodeURIComponent(
     listId
-  )}/is-liked?viewerId=${encodeURIComponent(viewerId)}`;
-
-  const response = await fetch(requestUrl, {
+  )}/is-liked`, {
     method: "GET",
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
     },
-  });
+  }, { authRequired: true });
   const data = await parseJsonSafely(response, "GET /lists/:id/is-liked");
 
   if (!response.ok) {
-    console.error("[getListLikeState] request failed", {
-      requestUrl,
-      status: response.status,
-      body: data,
-    });
     throw new Error(data?.message || "Failed to get like state");
   }
 
@@ -423,33 +368,22 @@ export const getMyLikedLists = async (
     return { data: [], hasMore: false, totalCount: 0 };
   }
 
-  const viewerId = await resolveViewerId(currentUid);
-  if (!viewerId) {
-    return { data: [], hasMore: false, totalCount: 0 };
-  }
-
   try {
     const searchParams = new URLSearchParams({
-      viewerId,
       offset: String(offset),
       limit: String(limit),
     });
     const requestUrl = `${API_BASE_URL}/lists/me/liked?${searchParams.toString()}`;
-    const response = await fetch(requestUrl, {
+    const response = await apiFetch(requestUrl, {
       method: "GET",
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
       },
-    });
+    }, { authRequired: true });
     const json = await parseJsonSafely(response, "GET /lists/me/liked");
 
     if (!response.ok || !json) {
-      console.error("[getMyLikedLists] request failed", {
-        requestUrl,
-        status: response.status,
-        body: json,
-      });
       return { data: [], hasMore: false, totalCount: 0 };
     }
 
@@ -473,8 +407,8 @@ export const patchAlbumList = async (list, id) => {
   //console.log("these are the albumsIDs that are about to be patched " + list);
   //patch list with updated albumlist
   try {
-    const response = await fetch(
-      `${API_BASE_URL}/lists/${id}`,
+    const response = await apiFetch(
+      `/lists/${id}`,
       {
         method: "PATCH",
         headers: {
@@ -485,9 +419,10 @@ export const patchAlbumList = async (list, id) => {
           albumList: list,
           albumIds: list,
         }),
-      }
+      },
+      { authRequired: true }
     );
-    const data = await response.json();
+    const data = await parseJsonSafely(response, "PATCH /lists/:id");
 
     if (response.ok) {
       console.log("Success:", data);
@@ -501,21 +436,14 @@ export const patchAlbumList = async (list, id) => {
   }
 };
 /**
- * Create a new list. Matches AlbumList entity:
- * - ownerId (UUID from backend user)
- * - firebaseUid (Firebase UID for reference)
- * - title, slug, listType, visibility, description
+ * Create a new list for the authenticated user.
+ * Actor identity is derived from the bearer token on the backend.
  */
 export const postList = async (uid, description, name) => {
   try {
-    const user = await getFullUserByUid(uid);
-    const ownerId = user?.id ?? uid;
-
     const slug = generateSlug(name) || "untitled-list";
 
     const body = {
-      ownerId,
-      firebaseUid: uid,
       title: name || "Untitled List",
       slug,
       listType: "custom",
@@ -524,15 +452,15 @@ export const postList = async (uid, description, name) => {
       description: description || null,
     };
 
-    const response = await fetch(`${API_BASE_URL}/lists`, {
+    const response = await apiFetch("/lists", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
       },
       body: JSON.stringify(body),
-    });
-    const data = await response.json();
+    }, { authRequired: true });
+    const data = await parseJsonSafely(response, "POST /lists");
 
     if (response.ok) {
       console.log("Success:", data);
@@ -548,11 +476,10 @@ export const postList = async (uid, description, name) => {
 /**
  * Create a list with a specific type (e.g. "backlog", "favorite").
  * Maps to AlbumList entity listType enum: custom, favorites, top_n, year, theme.
+ * Actor identity is derived from the bearer token on the backend.
  */
 export const postListWithType = async (uid, type) => {
   try {
-    const user = await getFullUserByUid(uid);
-    const ownerId = user?.id ?? uid;
     const normalizedType = type?.toLowerCase?.() || "";
 
     const listTypeMap = {
@@ -580,8 +507,6 @@ export const postListWithType = async (uid, type) => {
     const title = titleMap[normalizedType] || "Untitled List";
 
     const body = {
-      ownerId,
-      firebaseUid: uid,
       title,
       slug,
       listType,
@@ -593,15 +518,15 @@ export const postListWithType = async (uid, type) => {
       description: null,
     };
 
-    const response = await fetch(`${API_BASE_URL}/lists`, {
+    const response = await apiFetch("/lists", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
       },
       body: JSON.stringify(body),
-    });
-    const data = await response.json();
+    }, { authRequired: true });
+    const data = await parseJsonSafely(response, "POST /lists");
 
     if (response.ok) {
       console.log("Post with type Success:", data);

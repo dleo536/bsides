@@ -39,7 +39,6 @@ import {
   getAlbumDescriptionFromMusicBrainz,
   searchReleaseGroup,
 } from "../api/MusicBrainz";
-import { resolveBackendUserId } from "../api/UserAPI";
 
 const formatDetailDate = (dateString) => {
   if (!dateString) {
@@ -496,12 +495,6 @@ const AlbumPage = (route) => {
         return;
       }
 
-      const backendUserId = await resolveBackendUserId(firebaseUid);
-      if (!backendUserId) {
-        alert("Unable to resolve your user profile. Please try again.");
-        return;
-      }
-
       // Convert rating to ratingHalfSteps (0.5-5.0 stars -> 1-10 half-steps)
       let ratingHalfSteps = null;
       if (rating) {
@@ -541,7 +534,6 @@ const AlbumPage = (route) => {
 
       // Create Review object with proper structure matching backend DTO
       const review = new Review({
-        userId: backendUserId,
         spotifyAlbumId: albumData.id, // Store Spotify ID for reference
         releaseGroupMbId: releaseGroupMbId,
         albumTitleSnapshot: albumTitle,
@@ -553,7 +545,7 @@ const AlbumPage = (route) => {
         visibility: 'public',
       });
 
-      await postReview(backendUserId, review);
+      await postReview(null, review);
       console.log("----------->>>>>>>>>> 999939393 ---->> review submitted: ", review);
       setReviewModalVisible(false);
       setRating("");

@@ -214,7 +214,6 @@ export class Review {
    */
   toCreateDto() {
     return {
-      userId: this.userId,
       releaseGroupMbId: this.releaseGroupMbId,
       releaseMbId: this.releaseMbId,
       artistMbId: this.artistMbId,

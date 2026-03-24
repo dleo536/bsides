@@ -1,6 +1,7 @@
 import { Review } from "../logic/Review";
+import { apiFetch } from "./apiClient";
 import { getAlbumName, getAlbumCover, getAlbum } from "./SpotifyAPI";
-import { getUsernameByUID, resolveBackendUserId } from "./UserAPI";
+import { getUsernameByUID } from "./UserAPI";
 import API_BASE_URL from "../config/api";
 
 const parseJsonSafely = async (response, label) => {
@@ -40,17 +41,11 @@ export const getAllReviews = async (limit = 5, offset = 0, viewerUid = null) => 
       limit: String(limit),
       offset: String(offset),
     });
-    if (viewerUid) {
-      const viewerId = await resolveBackendUserId(viewerUid);
-      if (viewerId) {
-        searchParams.append("viewerId", viewerId);
-      } else {
-        searchParams.append("viewerUid", viewerUid);
-      }
-    }
 
     const requestUrl = `${API_BASE_URL}/reviews?${searchParams.toString()}`;
-    const response = await fetch(requestUrl, fetchData);
+    const response = await apiFetch(requestUrl, fetchData, {
+      authRequired: Boolean(viewerUid),
+    });
     const json = await parseJsonSafely(response, "GET /reviews");
 
     if (!response.ok || !json) {
@@ -65,7 +60,6 @@ export const getAllReviews = async (limit = 5, offset = 0, viewerUid = null) => 
     const reviews = json.data || json; // Handle both array and object responses
 
     const reviewArray = await Promise.all(reviews.map(jsonToReviews));
-    console.log("-------review array: ", json);
     return reviewArray;
   } catch (error) {
     console.error(error);
@@ -140,61 +134,28 @@ export const getReviewsByAlbum = async (
 };
 /**
  * Create a new review
- * @param {string} userId - User ID creating the review
+ * @param {string} _ignoredUserId - Legacy argument, actor identity now comes from the bearer token
  * @param {Object} reviewData - Review data matching CreateReviewDto
  * @returns {Promise<Response>}
  */
-export const postReview = async (userId, reviewData) => {
+export const postReview = async (_ignoredUserId, reviewData) => {
   try {
     // If reviewData is a Review instance, convert it to DTO format
     const createDto = reviewData.toCreateDto ? reviewData.toCreateDto() : {
-      userId: userId,
       ...reviewData
     };
 
-    const identifierCandidates = [userId, createDto.userId, createDto.firebaseUid]
-      .filter((value) => typeof value === "string")
-      .map((value) => value.trim())
-      .filter((value) => value.length > 0);
+    delete createDto.userId;
+    delete createDto.firebaseUid;
 
-    let resolvedBackendUserId = null;
-    let resolvedFirebaseUid = null;
-
-    for (const identifier of identifierCandidates) {
-      if (isUuid(identifier)) {
-        resolvedBackendUserId = resolvedBackendUserId || identifier;
-        continue;
-      }
-
-      resolvedFirebaseUid = resolvedFirebaseUid || identifier;
-      if (!resolvedBackendUserId) {
-        resolvedBackendUserId = await resolveBackendUserId(identifier);
-      }
-    }
-
-    if (!resolvedBackendUserId) {
-      throw new Error("Unable to resolve backend user id for review creation");
-    }
-
-    createDto.userId = resolvedBackendUserId;
-    if (!createDto.firebaseUid && resolvedFirebaseUid) {
-      createDto.firebaseUid = resolvedFirebaseUid;
-    }
-
-    console.log("[postReview] resolved identifiers", {
-      userId: createDto.userId,
-      hasFirebaseUid: Boolean(createDto.firebaseUid),
-      releaseGroupMbId: createDto.releaseGroupMbId,
-    });
-
-    const response = await fetch(`${API_BASE_URL}/reviews`, {
+    const response = await apiFetch("/reviews", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
       },
       body: JSON.stringify(createDto),
-    });
+    }, { authRequired: true });
     const data = await parseJsonSafely(response, "POST /reviews");
 
     if (response.ok) {
@@ -249,15 +210,15 @@ export const updateReview = async (reviewId, reviewData) => {
     // If reviewData is a Review instance, convert it to DTO format
     const updateDto = reviewData.toUpdateDto ? reviewData.toUpdateDto() : reviewData;
 
-    const response = await fetch(`${API_BASE_URL}/reviews/${reviewId}`, {
+    const response = await apiFetch(`/reviews/${reviewId}`, {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
       },
       body: JSON.stringify(updateDto),
-    });
-    const data = await response.json();
+    }, { authRequired: true });
+    const data = await parseJsonSafely(response, "PATCH /reviews/:id");
 
     if (response.ok) {
       console.log("Review updated successfully:", data);
@@ -279,13 +240,13 @@ export const updateReview = async (reviewId, reviewData) => {
  */
 export const deleteReview = async (reviewId) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/reviews/${reviewId}`, {
+    const response = await apiFetch(`/reviews/${reviewId}`, {
       method: "DELETE",
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
       },
-    });
+    }, { authRequired: true });
 
     if (response.ok) {
       console.log("Review deleted successfully");
@@ -309,7 +270,6 @@ export const postReviewLegacy = async (rating, description, albumID, userId) => 
   // Convert legacy format to new DTO format
   // Note: This assumes albumID is a Spotify ID or releaseGroupMbId
   const review = new Review({
-    userId: userId || "zfGQ77diIIao9wwk6ETxfmXk9N72",
     spotifyAlbumId: albumID?.length === 22 ? albumID : null,
     releaseGroupMbId: albumID?.length !== 22 ? albumID : null,
     ratingHalfSteps: rating ? Math.round(parseFloat(rating) * 2) : null,
@@ -318,7 +278,7 @@ export const postReviewLegacy = async (rating, description, albumID, userId) => 
     visibility: 'public',
   });
   
-  return postReview(userId, review);
+  return postReview(null, review);
 };
 /**
  * Convert backend API response to Review instance
