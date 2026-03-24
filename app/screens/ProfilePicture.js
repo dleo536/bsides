@@ -145,7 +145,7 @@ const ProfilePicturePage = () => {
       >
         <View style={styles.page}>
           <View style={styles.header}>
-            <Text style={styles.brand}>b-sides.</Text>
+            <Text style={styles.brand}>b.sides</Text>
             <View style={styles.optionalBadge}>
               <Text style={styles.optionalBadgeText}>Optional step</Text>
             </View>

@@ -461,7 +461,7 @@ export default function SignUpScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.hero}>
-            <Text style={styles.brand}>b-sides.</Text>
+            <Text style={styles.brand}>b.sides</Text>
             <Text style={styles.title}>Create your account</Text>
             <Text style={styles.subtitle}>
               Claim your username and start building your taste.

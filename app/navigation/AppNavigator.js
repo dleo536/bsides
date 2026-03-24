@@ -36,7 +36,7 @@ const AppNavigator = () => {
           const shouldShowTabHeader = focusedRouteName === "HomePage";
 
           return {
-            title: "b-sides",
+            title: "b.sides",
             headerShown: shouldShowTabHeader,
             tabBarIcon: () => {
               return (
@@ -265,6 +265,8 @@ function ProfileStack() {
         name="ProfileHome"
         component={ProfilePage}
         options={{
+          headerLeft: () => null,
+          headerBackVisible: false,
           headerBackTitle: "Back",
           headerBackTitleStyle: { fontSize: 10 },
           title: auth.currentUser?.displayName || "Profile",

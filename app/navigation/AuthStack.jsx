@@ -15,11 +15,25 @@ export default function AuthStack() {
       <Stack.Navigator>
         <Stack.Screen name="Welcome" component={WelcomeScreen} />
         <Stack.Screen name="Sign In" component={SignInScreen} />
-        <Stack.Screen name="Sign Up" component={SignUpScreen} />
+        <Stack.Screen
+          name="Sign Up"
+          component={SignUpScreen}
+          options={{
+            headerShown: false,
+            headerLeft: () => null,
+            headerBackVisible: false,
+            gestureEnabled: false,
+          }}
+        />
         <Stack.Screen
           name="Profile Picture"
           component={ProfilePicturePage}
-          options={{ headerShown: false }}
+          options={{
+            headerShown: false,
+            headerLeft: () => null,
+            headerBackVisible: false,
+            gestureEnabled: false,
+          }}
         />
       </Stack.Navigator>
     </NavigationContainer>

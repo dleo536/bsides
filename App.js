@@ -37,7 +37,15 @@ export default function App() {
           name="Sign In"
           component={SignInScreen}
         ></Stack.Screen>
-        <Stack.Screen name="Profile Picture" component={ProfilePicturePage} />
+        <Stack.Screen
+          name="Profile Picture"
+          component={ProfilePicturePage}
+          options={{
+            headerShown: false,
+            headerBackVisible: false,
+            gestureEnabled: false,
+          }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
     // <NavigationContainer>
