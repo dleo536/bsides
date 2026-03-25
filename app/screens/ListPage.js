@@ -11,6 +11,7 @@ import {
   View,
 } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { auth } from "../config/firebase";
 import { getAlbum } from "../api/SpotifyAPI";
@@ -55,9 +56,39 @@ export default function ListPage() {
   const [isLiked, setIsLiked] = useState(false);
 
   const currentUid = auth?.currentUser?.uid || null;
-  const listId = listData?.id || initialList?.id || null;
+  const listId = route.params?.listId || listData?.id || initialList?.id || null;
   const albumIds = Array.isArray(listData?.albumList) ? listData.albumList : [];
   const albumIdsKey = useMemo(() => albumIds.join("|"), [albumIds]);
+
+  const handleBackPress = useCallback(() => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+      return;
+    }
+
+    const stackState = navigation.getState?.();
+    const rootRouteName = stackState?.routes?.[0]?.name;
+    if (rootRouteName && rootRouteName !== route.name) {
+      navigation.navigate(rootRouteName);
+      return;
+    }
+
+    const parentNavigation = navigation.getParent?.();
+    const parentState = parentNavigation?.getState?.();
+    const activeTabName =
+      parentState?.routes?.[parentState?.index ?? 0]?.name || null;
+    const fallbackRouteName =
+      {
+        Home: "HomePage",
+        Search: "SearchPage",
+        ProfilePage: "ProfileHome",
+      }[activeTabName] || "HomePage";
+
+    navigation.reset({
+      index: 0,
+      routes: [{ name: fallbackRouteName }],
+    });
+  }, [navigation, route.name]);
 
   const formattedDate = useMemo(() => {
     const sourceDate = listData?.date || listData?.createdAt;
@@ -228,118 +259,144 @@ export default function ListPage() {
 
   if (!listData) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" />
-      </View>
+      <SafeAreaView style={styles.screen}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" />
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerIconButton}>
-          <Ionicons name="arrow-back" size={24} color="#111827" />
-        </TouchableOpacity>
-        <View style={styles.headerTitleBlock}>
-          <Text style={styles.title}>{listData.listName}</Text>
-          {creatorName ? <Text style={styles.creator}>By @{creatorName}</Text> : null}
-        </View>
-        <TouchableOpacity
-          onPress={handleLikePress}
-          style={styles.likeButton}
-          disabled={likeLoading}
-        >
-          {likeLoading ? (
-            <ActivityIndicator size="small" color="#111827" />
-          ) : (
-            <>
-              <Ionicons
-                name={isLiked ? "thumbs-up" : "thumbs-up-outline"}
-                size={20}
-                color={isLiked ? "#2563eb" : "#111827"}
-              />
-              <Text style={[styles.likeCount, isLiked && styles.likeCountActive]}>
-                {Number(listData?.likesCount || 0)}
-              </Text>
-            </>
-          )}
-        </TouchableOpacity>
-      </View>
-
-      {listData.listDescription ? (
-        <Text style={styles.description}>{listData.listDescription}</Text>
-      ) : (
-        <Text style={styles.descriptionMuted}>No description yet.</Text>
-      )}
-      {formattedDate ? <Text style={styles.date}>{formattedDate}</Text> : null}
-
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Albums</Text>
-        <Text style={styles.sectionMeta}>
-          {albumEntries.length || albumIds.length} item
-          {(albumEntries.length || albumIds.length) === 1 ? "" : "s"}
-        </Text>
-      </View>
-
-      {albumsLoading ? (
-        <View style={styles.loadingAlbumsRow}>
-          <ActivityIndicator size="small" />
-          <Text style={styles.loadingAlbumsText}>Loading album art...</Text>
-        </View>
-      ) : null}
-
-      {!albumsLoading && albumEntries.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyStateTitle}>No albums in this list yet.</Text>
-          <Text style={styles.emptyStateBody}>Add albums to the list to see the grid here.</Text>
-        </View>
-      ) : null}
-
-      <View style={styles.albumGrid}>
-        {albumEntries.map((album) => (
+    <SafeAreaView style={styles.screen} edges={["top"]}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
+        contentInsetAdjustmentBehavior="never"
+      >
+        <View style={styles.header}>
           <TouchableOpacity
-            key={album.id}
-            onPress={() =>
-              album.albumData
-                ? navigation.navigate("AlbumPage", {
-                    album: album.albumData,
-                  })
-                : null
-            }
-            disabled={!album.albumData}
-            style={styles.albumTile}
-            activeOpacity={album.albumData ? 0.86 : 1}
+            onPress={handleBackPress}
+            style={styles.headerIconButton}
+            activeOpacity={0.78}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            {album.coverUrl ? (
-              <Image source={{ uri: album.coverUrl }} style={styles.albumCover} />
+            <Ionicons name="arrow-back" size={24} color="#111827" />
+          </TouchableOpacity>
+          <View style={styles.headerTitleBlock}>
+            <Text style={styles.title}>{listData.listName}</Text>
+            {creatorName ? <Text style={styles.creator}>By @{creatorName}</Text> : null}
+          </View>
+          <TouchableOpacity
+            onPress={handleLikePress}
+            style={styles.likeButton}
+            disabled={likeLoading}
+            activeOpacity={0.82}
+          >
+            {likeLoading ? (
+              <ActivityIndicator size="small" color="#111827" />
             ) : (
-              <View style={[styles.albumCover, styles.albumCoverFallback]}>
-                <Text style={styles.albumCoverFallbackText}>
-                  {(album.title || "Album").slice(0, 1).toUpperCase()}
+              <>
+                <Ionicons
+                  name={isLiked ? "thumbs-up" : "thumbs-up-outline"}
+                  size={20}
+                  color={isLiked ? "#2563eb" : "#111827"}
+                />
+                <Text style={[styles.likeCount, isLiked && styles.likeCountActive]}>
+                  {Number(listData?.likesCount || 0)}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {listData.listDescription ? (
+          <Text style={styles.description}>{listData.listDescription}</Text>
+        ) : (
+          <Text style={styles.descriptionMuted}>No description yet.</Text>
+        )}
+        {formattedDate ? <Text style={styles.date}>{formattedDate}</Text> : null}
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Albums</Text>
+          <Text style={styles.sectionMeta}>
+            {albumEntries.length || albumIds.length} item
+            {(albumEntries.length || albumIds.length) === 1 ? "" : "s"}
+          </Text>
+        </View>
+
+        {albumsLoading ? (
+          <View style={styles.loadingAlbumsRow}>
+            <ActivityIndicator size="small" />
+            <Text style={styles.loadingAlbumsText}>Loading album art...</Text>
+          </View>
+        ) : null}
+
+        {!albumsLoading && albumEntries.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyStateTitle}>No albums in this list yet.</Text>
+            <Text style={styles.emptyStateBody}>
+              Add albums to the list to see the grid here.
+            </Text>
+          </View>
+        ) : null}
+
+        <View style={styles.albumGrid}>
+          {albumEntries.map((album) => (
+            <TouchableOpacity
+              key={album.id}
+              onPress={() =>
+                album.albumData
+                  ? navigation.navigate("AlbumPage", {
+                      album: album.albumData,
+                    })
+                  : null
+              }
+              disabled={!album.albumData}
+              style={styles.albumTile}
+              activeOpacity={album.albumData ? 0.86 : 1}
+            >
+              {album.coverUrl ? (
+                <Image source={{ uri: album.coverUrl }} style={styles.albumCover} />
+              ) : (
+                <View style={[styles.albumCover, styles.albumCoverFallback]}>
+                  <Text style={styles.albumCoverFallbackText}>
+                    {(album.title || "Album").slice(0, 1).toUpperCase()}
+                  </Text>
+                </View>
+              )}
+              <View style={styles.albumMeta}>
+                <Text style={styles.albumTitle} numberOfLines={1}>
+                  {album.title}
+                </Text>
+                <Text style={styles.artistName} numberOfLines={1}>
+                  {album.artistNames}
                 </Text>
               </View>
-            )}
-            <View style={styles.albumMeta}>
-              <Text style={styles.albumTitle} numberOfLines={1}>
-                {album.title}
-              </Text>
-              <Text style={styles.artistName} numberOfLines={1}>
-                {album.artistNames}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        ))}
-      </View>
-    </ScrollView>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: "#fff",
+  },
+  scrollView: {
+    flex: 1,
+    backgroundColor: "#fff",
+  },
   container: {
     paddingHorizontal: GRID_PADDING,
-    paddingTop: 18,
+    paddingTop: 14,
     paddingBottom: 80,
     backgroundColor: "#fff",
+    flexGrow: 1,
   },
   loadingContainer: {
     flex: 1,
@@ -354,6 +411,8 @@ const styles = StyleSheet.create({
   },
   headerIconButton: {
     marginRight: 10,
+    padding: 6,
+    borderRadius: 999,
   },
   headerTitleBlock: {
     flex: 1,

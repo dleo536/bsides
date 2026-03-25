@@ -3,6 +3,7 @@ import { apiFetch } from "./apiClient";
 import { getAlbumName, getAlbumCover, getAlbum } from "./SpotifyAPI";
 import { getUsernameByUID } from "./UserAPI";
 import API_BASE_URL from "../config/api";
+import { auth } from "../config/firebase";
 
 const parseJsonSafely = async (response, label) => {
   const raw = await response.text();
@@ -67,10 +68,27 @@ export const getAllReviews = async (limit = 5, offset = 0, viewerUid = null) => 
   }
 };
 export const getReviewsByUID = async (uid) => {
-  const response = await fetch(
-    `${API_BASE_URL}/reviews?userID=${uid}`
-  );
-  const json = await response.json();
+  const requestUrl = `${API_BASE_URL}/reviews?userID=${encodeURIComponent(uid)}`;
+  const response = await apiFetch(requestUrl, {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+  }, {
+    authRequired: Boolean(auth.currentUser),
+  });
+  const json = await parseJsonSafely(response, "GET /reviews by user");
+
+  if (!response.ok || !json) {
+    console.error("[getReviewsByUID] request failed", {
+      requestUrl,
+      status: response.status,
+      body: json,
+    });
+    return [];
+  }
+
   const reviews = json.data || json; // Handle both array and object responses
   const reviewArray = await Promise.all(reviews.map(jsonToReviews));
   return reviewArray;
@@ -101,12 +119,14 @@ export const getReviewsByAlbum = async (
     }
 
     const requestUrl = `${API_BASE_URL}/reviews?${searchParams.toString()}`;
-    const response = await fetch(requestUrl, {
+    const response = await apiFetch(requestUrl, {
       method: "GET",
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
       },
+    }, {
+      authRequired: Boolean(auth.currentUser),
     });
     const json = await parseJsonSafely(response, "GET /reviews album lookup");
 
@@ -147,6 +167,7 @@ export const postReview = async (_ignoredUserId, reviewData) => {
 
     delete createDto.userId;
     delete createDto.firebaseUid;
+    delete createDto.visibility;
 
     const response = await apiFetch("/reviews", {
       method: "POST",
@@ -181,17 +202,22 @@ export const postReview = async (_ignoredUserId, reviewData) => {
  */
 export const getReviewById = async (reviewId) => {
   try {
-    const response = await fetch(
-      `${API_BASE_URL}/reviews/${reviewId}`,
-      {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-        },
-      }
-    );
-    const json = await response.json();
+    const requestUrl = `${API_BASE_URL}/reviews/${reviewId}`;
+    const response = await apiFetch(requestUrl, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+    }, {
+      authRequired: Boolean(auth.currentUser),
+    });
+    const json = await parseJsonSafely(response, "GET /reviews/:id");
+
+    if (!response.ok || !json) {
+      throw new Error(`Failed to fetch review ${reviewId}`);
+    }
+
     return await jsonToReviews(json);
   } catch (error) {
     console.error("Error fetching review:", error);
@@ -209,6 +235,7 @@ export const updateReview = async (reviewId, reviewData) => {
   try {
     // If reviewData is a Review instance, convert it to DTO format
     const updateDto = reviewData.toUpdateDto ? reviewData.toUpdateDto() : reviewData;
+    delete updateDto.visibility;
 
     const response = await apiFetch(`/reviews/${reviewId}`, {
       method: "PATCH",
@@ -267,12 +294,17 @@ export const deleteReview = async (reviewId) => {
  * @deprecated Use postReview with CreateReviewDto format instead
  */
 export const postReviewLegacy = async (rating, description, albumID, userId) => {
+  const parsedRating = Number.parseFloat(rating);
+  const normalizedRating = Number.isFinite(parsedRating)
+    ? (parsedRating <= 5 ? parsedRating * 2 : parsedRating)
+    : null;
+
   // Convert legacy format to new DTO format
   // Note: This assumes albumID is a Spotify ID or releaseGroupMbId
   const review = new Review({
     spotifyAlbumId: albumID?.length === 22 ? albumID : null,
     releaseGroupMbId: albumID?.length !== 22 ? albumID : null,
-    ratingHalfSteps: rating ? Math.round(parseFloat(rating) * 2) : null,
+    ratingHalfSteps: normalizedRating !== null ? Number(normalizedRating.toFixed(1)) : null,
     body: description,
     isDraft: false,
     visibility: 'public',

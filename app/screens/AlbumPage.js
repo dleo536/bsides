@@ -40,6 +40,26 @@ import {
   searchReleaseGroup,
 } from "../api/MusicBrainz";
 
+const RATING_INPUT_PATTERN = /^(?:10(?:\.0?)?|[0-9](?:\.\d?)?)?$/;
+
+const parseReviewRatingInput = (value) => {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalizedValue = value.trim();
+  if (!normalizedValue || !RATING_INPUT_PATTERN.test(normalizedValue)) {
+    return null;
+  }
+
+  const parsed = Number.parseFloat(normalizedValue);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 10) {
+    return null;
+  }
+
+  return Number(parsed.toFixed(1));
+};
+
 const formatDetailDate = (dateString) => {
   if (!dateString) {
     return "Unknown";
@@ -310,8 +330,8 @@ const AlbumPage = (route) => {
   const [actionModalVisible, setActionModalVisible] = useState(false);
   const [reviewModalVisible, setReviewModalVisible] = useState(false);
   const [listModalVisible, setListModalVisible] = useState(false);
-  const [rating, setRating] = useState(false);
-  const [description, setDescription] = useState(false);
+  const [rating, setRating] = useState("");
+  const [description, setDescription] = useState("");
   const [listReturned, setListReturned] = useState();
   const [selectedIds, setSelectedIds] = useState([]);
   const [trackList, setTrackList] = useState([]);
@@ -495,12 +515,12 @@ const AlbumPage = (route) => {
         return;
       }
 
-      // Convert rating to ratingHalfSteps (0.5-5.0 stars -> 1-10 half-steps)
       let ratingHalfSteps = null;
-      if (rating) {
-        const ratingNum = parseFloat(rating);
-        if (!isNaN(ratingNum) && ratingNum >= 0.5 && ratingNum <= 5.0) {
-          ratingHalfSteps = Math.round(ratingNum * 2);
+      if (typeof rating === "string" && rating.trim()) {
+        ratingHalfSteps = parseReviewRatingInput(rating);
+        if (ratingHalfSteps === null) {
+          alert("Ratings can use at most one decimal place, like 9.2.");
+          return;
         }
       }
 
@@ -862,14 +882,22 @@ const AlbumPage = (route) => {
                   </View>
                   
                   <View style={styles.modalContent}>
-                    <Text style={styles.inputLabel}>Rating (0.5 - 5.0)</Text>
+                    <Text style={styles.inputLabel}>Rating</Text>
                     <TextInput
-                      placeholder="e.g., 4.5"
+                      placeholder="e.g., 9.2"
                       value={rating}
-                      onChangeText={setRating}
+                      onChangeText={(nextValue) => {
+                        const normalizedValue = nextValue.replace(/,/g, ".");
+                        if (RATING_INPUT_PATTERN.test(normalizedValue)) {
+                          setRating(normalizedValue);
+                        }
+                      }}
                       keyboardType="decimal-pad"
                       style={styles.modalInput}
                     />
+                    <Text style={styles.inputHelperText}>
+                      Optional. Use up to one decimal place, like 9.2.
+                    </Text>
                     
                     <Text style={styles.inputLabel}>Review</Text>
                     <TextInput
@@ -1226,6 +1254,11 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
+    marginBottom: 8,
+  },
+  inputHelperText: {
+    fontSize: 12,
+    color: "#6B7280",
     marginBottom: 8,
   },
   textArea: {

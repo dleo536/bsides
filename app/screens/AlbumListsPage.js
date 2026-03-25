@@ -163,9 +163,15 @@ const AlbumListsPage = () => {
             item?.id?.toString?.() || item?.slug || `album-list-${index}`
           }
           renderItem={({ item }) => (
-            <TouchableOpacity onPress={() => navigation.push("ListPage", { list: item })}>
-              <ListElement list={item} />
-            </TouchableOpacity>
+            <ListElement
+              list={item}
+              onPress={() =>
+                navigation.push("ListPage", {
+                  list: item,
+                  listId: item?.id || null,
+                })
+              }
+            />
           )}
           ListHeaderComponent={renderHeader}
           ListEmptyComponent={renderEmptyState}

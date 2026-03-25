@@ -1,11 +1,12 @@
-import { Image, StyleSheet, Text, View } from "react-native";
+import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import React, { useEffect, useMemo, useState } from "react";
 import { getUsernameByUID } from "../api/UserAPI";
 import { getAlbumCover } from "../api/SpotifyAPI";
+import { Ionicons } from "@expo/vector-icons";
 
 const PREVIEW_LIMIT = 4;
 
-export default function ListElement({ list }) {
+export default function ListElement({ list, onPress }) {
   const [username, setUsername] = useState("");
   const [albumCovers, setAlbumCovers] = useState([]);
 
@@ -88,8 +89,8 @@ export default function ListElement({ list }) {
     };
   }, [list?.ownerId, list?.uid, previewAlbumIdsKey]);
 
-  return (
-    <View style={styles.card}>
+  const cardContent = (
+    <>
       <View style={styles.header}>
         <View style={styles.titleBlock}>
           <Text style={styles.title} numberOfLines={1}>
@@ -132,8 +133,26 @@ export default function ListElement({ list }) {
         <Text style={styles.footerText}>
           {likesCount} like{likesCount === 1 ? "" : "s"}
         </Text>
+        {onPress ? (
+          <Ionicons name="chevron-forward" size={18} color="#9ca3af" />
+        ) : null}
       </View>
-    </View>
+    </>
+  );
+
+  return (
+    onPress ? (
+      <TouchableOpacity
+        style={styles.card}
+        onPress={onPress}
+        activeOpacity={0.88}
+        accessibilityRole="button"
+      >
+        {cardContent}
+      </TouchableOpacity>
+    ) : (
+      <View style={styles.card}>{cardContent}</View>
+    )
   );
 }
 

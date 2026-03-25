@@ -22,6 +22,7 @@ import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
 import { createMaterialTopTabNavigator } from "@react-navigation/material-top-tabs";
 import defaultProfileImage from "../../assets/defaultProfilePicture.png";
 import { auth } from "../config/firebase";
+import { formatReviewScore } from "../logic/Review";
 import { getListByUID, getMyLikedLists, postList } from "../api/ListAPI";
 import { getReviewsByUID } from "../api/ReviewAPI";
 import { getAlbum } from "../api/SpotifyAPI";
@@ -226,12 +227,15 @@ const BacklogAlbumTile = ({ album, onPress }) => (
 
 const HistoryReviewCard = ({ review }) => {
   const createdLabel = formatHistoryDate(review?.createdAt || review?.date);
-  const ratingLabel =
+  const rawRating =
     review?.ratingHalfSteps || review?.ratingHalfSteps === 0
-      ? `${(Number(review.ratingHalfSteps) / 2).toFixed(1)}/5`
-      : review?.rating
-      ? `${review.rating}/5`
-      : null;
+      ? Number(review.ratingHalfSteps)
+      : Number(review?.rating);
+  const normalizedRating = Number.isFinite(rawRating)
+    ? rawRating <= 5 ? rawRating * 2 : rawRating
+    : null;
+  const ratingLabel =
+    normalizedRating !== null ? formatReviewScore(normalizedRating) : null;
 
   return (
     <View style={styles.historyReviewCard}>
@@ -945,7 +949,17 @@ const ListsTab = () => {
               <FlatList
                 data={visibleLists}
                 keyExtractor={(item) => item.id}
-                renderItem={({ item }) => <ListElement list={item} />}
+                renderItem={({ item }) => (
+                  <ListElement
+                    list={item}
+                    onPress={() =>
+                      navigation.push("ListPage", {
+                        list: item,
+                        listId: item?.id || null,
+                      })
+                    }
+                  />
+                )}
                 style={styles.listElement}
               />
             ) : (

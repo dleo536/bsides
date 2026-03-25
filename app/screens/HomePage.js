@@ -19,6 +19,7 @@ import ListElement from "../components/listElement.js";
 import { getAllLists } from "../api/ListAPI.js";
 import { createMaterialTopTabNavigator } from "@react-navigation/material-top-tabs";
 import { auth } from "../config/firebase";
+import { formatReviewScore } from "../logic/Review.js";
 
 const Tab = createMaterialTopTabNavigator();
 const PAGE_SIZE = 12;
@@ -44,15 +45,15 @@ const toNumberOrNull = (value) => {
   return Number.isFinite(numeric) ? numeric : null;
 };
 
-// Reviews can be 0.5-5.0 or 1-10 depending on source payload, normalize to 1-10.
+// Reviews can arrive as legacy 5-star values or normalized 10-point values.
 const getRatingOnTenScale = (review) => {
-  const halfSteps = toNumberOrNull(review?.ratingHalfSteps);
-  if (halfSteps !== null) {
-    return Math.max(0, Math.min(10, halfSteps));
+  const storedRating = toNumberOrNull(review?.ratingHalfSteps);
+  if (storedRating !== null) {
+    return Math.max(0, Math.min(10, storedRating));
   }
 
   const rawRating = toNumberOrNull(review?.rating);
-  if (rawRating === null) return 0;
+  if (rawRating === null) return null;
 
   const normalized = rawRating <= 5 ? rawRating * 2 : rawRating;
   return Math.max(0, Math.min(10, normalized));
@@ -72,7 +73,8 @@ const buildMasonryColumns = (reviews, columnCount, columnWidth) => {
 
   reviews.forEach((review, index) => {
     const ratingOnTenScale = getRatingOnTenScale(review);
-    const sizeClass = getRatingSizeClass(ratingOnTenScale);
+    const ratingForSize = ratingOnTenScale ?? 0;
+    const sizeClass = getRatingSizeClass(ratingForSize);
     const visualSize = Math.max(
       74,
       Math.round(columnWidth * RATING_SIZE_SCALE[sizeClass])
@@ -96,7 +98,8 @@ const buildMasonryColumns = (reviews, columnCount, columnWidth) => {
       tileHeight,
       visualSize,
       coverUri: review?.albumCover || review?.coverUrlSnapshot || null,
-      ratingLabel: ratingOnTenScale ? ratingOnTenScale.toFixed(1) : "—",
+      ratingLabel:
+        ratingOnTenScale === null ? "—" : formatReviewScore(ratingOnTenScale),
     });
 
     columnHeights[shortestColumnIndex] += tileHeight + TILE_GUTTER;
@@ -369,9 +372,15 @@ const ListList = () => {
         item?.id?.toString?.() || `list-${item?.slug || index}`
       }
       renderItem={({ item }) => (
-        <TouchableOpacity onPress={() => navigation.navigate("ListPage", { list: item })}>
-          <ListElement list={item} />
-        </TouchableOpacity>
+        <ListElement
+          list={item}
+          onPress={() =>
+            navigation.push("ListPage", {
+              list: item,
+              listId: item?.id || null,
+            })
+          }
+        />
       )}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />

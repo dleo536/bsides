@@ -8,8 +8,17 @@ import {
   Image,
 } from "react-native";
 import { Card, Title, Paragraph, IconButton } from "react-native-paper";
+import { formatReviewScore } from "../logic/Review";
 
 export default function ReviewElement({ review }) {
+  const rawRating =
+    review?.ratingHalfSteps || review?.ratingHalfSteps === 0
+      ? Number(review.ratingHalfSteps)
+      : Number(review?.rating);
+  const normalizedRating = Number.isFinite(rawRating)
+    ? rawRating <= 5 ? rawRating * 2 : rawRating
+    : null;
+
   return (
     <View style={styles.container}>
       <Text style={styles.username}>{review.username}</Text>
@@ -24,7 +33,9 @@ export default function ReviewElement({ review }) {
           <Text style={styles.artistName}>{review.artistName}</Text>
 
           {/* Rating */}
-          <Text style={styles.rating}>{review.rating}/10</Text>
+          <Text style={styles.rating}>
+            {normalizedRating === null ? "Unrated" : formatReviewScore(normalizedRating)}
+          </Text>
 
           {/* Review Body */}
           {review.reviewBody && (

@@ -19,6 +19,7 @@ import {
   getArtistByName,
 } from "../api/SpotifyAPI";
 import { getUserByIdentifier } from "../api/UserAPI";
+import { formatReviewScore } from "../logic/Review";
 
 const SPOTIFY_ID_LENGTH = 22;
 
@@ -47,12 +48,13 @@ const formatReviewDate = (value) => {
 
 const formatRatingValue = (review) => {
   if (typeof review?.ratingHalfSteps === "number") {
-    return `${(review.ratingHalfSteps / 2).toFixed(1)}`;
+    return formatReviewScore(review.ratingHalfSteps);
   }
 
   const numericRating = Number(review?.rating);
   if (Number.isFinite(numericRating)) {
-    return `${numericRating.toFixed(1)}`;
+    const normalizedRating = numericRating <= 5 ? numericRating * 2 : numericRating;
+    return formatReviewScore(normalizedRating);
   }
 
   return "Unrated";

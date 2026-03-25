@@ -2,6 +2,7 @@ import React from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createStackNavigator } from "@react-navigation/stack";
 import { getFocusedRouteNameFromRoute } from "@react-navigation/native";
+import { StyleSheet, View } from "react-native";
 import HomePage from "../screens/HomePage";
 import SearchPage from "../screens/SearchPage";
 import ProfilePage from "../screens/ProfilePage";
@@ -25,6 +26,20 @@ import NewReleasesResults from "../screens/NewReleasesResults";
 const Tab = createBottomTabNavigator();
 
 const Stack = createStackNavigator();
+
+const renderListStyleBackImage = () => (
+  <View style={styles.detailBackIcon}>
+    <Ionicons name="arrow-back" size={24} color="#111827" />
+  </View>
+);
+
+const detailBackButtonOptions = {
+  headerBackTitleVisible: false,
+  headerBackTitle: "",
+  headerBackImage: renderListStyleBackImage,
+  headerTintColor: "#111827",
+};
+
 const AppNavigator = () => {
   return (
     <Tab.Navigator>
@@ -110,8 +125,7 @@ function SearchStack() {
         name="AlbumPage"
         component={AlbumPage}
         options={{
-          headerBackTitle: "Back",
-          headerBackTitleStyle: { fontSize: 10 },
+          ...detailBackButtonOptions,
         }}
       />
       <Stack.Screen
@@ -136,16 +150,14 @@ function SearchStack() {
         name="ArtistPage"
         component={ArtistPage}
         options={{
-          headerBackTitle: "Back",
-          headerBackTitleStyle: { fontSize: 10 },
+          ...detailBackButtonOptions,
         }}
       />
       <Stack.Screen
         name="UserPage"
         component={UserPage}
         options={{
-          headerBackTitle: "Back",
-          headerBackTitleStyle: { fontSize: 10 },
+          ...detailBackButtonOptions,
         }}
       />
       <Stack.Screen
@@ -216,8 +228,7 @@ function HomeStack() {
         name="AlbumPage"
         component={AlbumPage}
         options={{
-          headerBackTitle: "Back",
-          headerBackTitleStyle: { fontSize: 10 },
+          ...detailBackButtonOptions,
         }}
       />
       <Stack.Screen
@@ -242,16 +253,14 @@ function HomeStack() {
         name="ArtistPage"
         component={ArtistPage}
         options={{
-          headerBackTitle: "Back",
-          headerBackTitleStyle: { fontSize: 10 },
+          ...detailBackButtonOptions,
         }}
       />
       <Stack.Screen
         name="UserPage"
         component={UserPage}
         options={{
-          headerBackTitle: "Back",
-          headerBackTitleStyle: { fontSize: 10 },
+          ...detailBackButtonOptions,
         }}
       />
     </Stack.Navigator>
@@ -292,8 +301,7 @@ function ProfileStack() {
         name="AlbumPage"
         component={AlbumPage}
         options={{
-          headerBackTitle: "Back",
-          headerBackTitleStyle: { fontSize: 10 },
+          ...detailBackButtonOptions,
         }}
       />
       <Stack.Screen
@@ -325,16 +333,14 @@ function ProfileStack() {
         name="ArtistPage"
         component={ArtistPage}
         options={{
-          headerBackTitle: "Back",
-          headerBackTitleStyle: { fontSize: 10 },
+          ...detailBackButtonOptions,
         }}
       />
       <Stack.Screen
         name="UserPage"
         component={UserPage}
         options={{
-          headerBackTitle: "Back",
-          headerBackTitleStyle: { fontSize: 10 },
+          ...detailBackButtonOptions,
         }}
       />
     </Stack.Navigator>
@@ -342,3 +348,11 @@ function ProfileStack() {
 }
 
 export default AppNavigator;
+
+const styles = StyleSheet.create({
+  detailBackIcon: {
+    marginLeft: 6,
+    padding: 6,
+    borderRadius: 999,
+  },
+});

@@ -355,7 +355,18 @@ const UserPage = () => {
               ) : lists.length === 0 ? (
                 <Text style={styles.emptyText}>No lists yet.</Text>
               ) : (
-                lists.map((list) => <ListElement key={list.id} list={list} />)
+                lists.map((list) => (
+                  <ListElement
+                    key={list.id}
+                    list={list}
+                    onPress={() =>
+                      navigation.push("ListPage", {
+                        list,
+                        listId: list?.id || null,
+                      })
+                    }
+                  />
+                ))
               )}
             </View>
           )}

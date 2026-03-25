@@ -284,17 +284,16 @@ const SearchPage = () => {
 
     if (selectedButton === "Lists") {
       return (
-        <TouchableOpacity
+        <ListElement
+          list={item}
           onPress={() =>
             navigation.push("ListPage", {
               list: item,
+              listId: item?.id || null,
               key: Math.round(Math.random() * 10000000),
             })
           }
-          activeOpacity={0.9}
-        >
-          <ListElement list={item} />
-        </TouchableOpacity>
+        />
       );
     }
 

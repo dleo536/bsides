@@ -2,6 +2,17 @@
  * Review class compatible with backend Review entity and DTOs
  * Maps to: b-backend/src/review/review.entity.ts
  */
+export const formatReviewScore = (value) => {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return null;
+  }
+
+  return Number.isInteger(numericValue)
+    ? String(numericValue)
+    : numericValue.toFixed(1).replace(/\.0$/, "");
+};
+
 export class Review {
   constructor(data = {}) {
     // --- Core identifiers (from backend) ---
@@ -23,8 +34,8 @@ export class Review {
     this.coverUrlSnapshot = data.coverUrlSnapshot || null;
     
     // --- Review content ---
-    // ratingHalfSteps: 1-10 where 1 = 0.5 stars, 10 = 5.0 stars
-    this.ratingHalfSteps = data.ratingHalfSteps || null;
+    // Stored as a 10-point score with one decimal place, e.g. 9.2 / 10.
+    this.ratingHalfSteps = data.ratingHalfSteps ?? null;
     this.headline = data.headline || null;
     this.body = data.body || null;
     this.isSpoiler = data.isSpoiler || false;
@@ -98,16 +109,14 @@ export class Review {
     
     Object.defineProperty(this, 'rating', {
       get: () => {
-        // Convert ratingHalfSteps (1-10) to display rating (0.5-5.0)
         if (this.ratingHalfSteps !== null && this.ratingHalfSteps !== undefined) {
-          return (this.ratingHalfSteps / 2).toFixed(1);
+          return formatReviewScore(this.ratingHalfSteps);
         }
         return null;
       },
       set: (value) => {
-        // Convert display rating (0.5-5.0) to ratingHalfSteps (1-10)
         if (value !== null && value !== undefined) {
-          this.ratingHalfSteps = Math.round(parseFloat(value) * 2);
+          this.ratingHalfSteps = Number(parseFloat(value).toFixed(1));
         }
       },
       enumerable: true,
@@ -156,23 +165,23 @@ export class Review {
   }
   
   /**
-   * Convert ratingHalfSteps to display format (0.5-5.0 stars)
+   * Convert ratingHalfSteps to display format (0.0-10.0)
    */
   getRatingDisplay() {
     if (this.ratingHalfSteps === null || this.ratingHalfSteps === undefined) {
       return null;
     }
-    return (this.ratingHalfSteps / 2).toFixed(1);
+    return formatReviewScore(this.ratingHalfSteps);
   }
   
   /**
-   * Convert display rating to ratingHalfSteps
+   * Convert display rating to the stored 10-point value
    */
   setRatingFromDisplay(rating) {
     if (rating === null || rating === undefined) {
       this.ratingHalfSteps = null;
     } else {
-      this.ratingHalfSteps = Math.round(parseFloat(rating) * 2);
+      this.ratingHalfSteps = Number(parseFloat(rating).toFixed(1));
     }
   }
   
@@ -226,7 +235,6 @@ export class Review {
       body: this.body,
       isSpoiler: this.isSpoiler,
       isDraft: this.isDraft,
-      visibility: this.visibility,
       listenedOn: this.listenedOn,
       relistenCount: this.relistenCount,
       trackHighlights: this.trackHighlights,
@@ -244,7 +252,6 @@ export class Review {
       body: this.body,
       isSpoiler: this.isSpoiler,
       isDraft: this.isDraft,
-      visibility: this.visibility,
       listenedOn: this.listenedOn,
       relistenCount: this.relistenCount,
       trackHighlights: this.trackHighlights,

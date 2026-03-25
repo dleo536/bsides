@@ -70,9 +70,15 @@ const LikedListsPage = () => {
             item?.id?.toString?.() || item?.slug || `liked-list-${index}`
           }
           renderItem={({ item }) => (
-            <TouchableOpacity onPress={() => navigation.push("ListPage", { list: item })}>
-              <ListElement list={item} />
-            </TouchableOpacity>
+            <ListElement
+              list={item}
+              onPress={() =>
+                navigation.push("ListPage", {
+                  list: item,
+                  listId: item?.id || null,
+                })
+              }
+            />
           )}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
