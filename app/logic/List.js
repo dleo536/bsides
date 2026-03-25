@@ -7,6 +7,7 @@ export class List {
     // --- Core identifiers (from backend) ---
     this.id = data.id || null;
     this.ownerId = data.ownerId || null;
+    this.firebaseUid = data.firebaseUid || null;
     
     // --- Identity / display ---
     this.title = data.title || '';
@@ -116,6 +117,7 @@ export class List {
     return new List({
       id: data.id,
       ownerId: data.ownerId,
+      firebaseUid: data.firebaseUid,
       title: data.title,
       slug: data.slug,
       listType: data.listType,

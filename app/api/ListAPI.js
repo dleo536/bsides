@@ -291,6 +291,42 @@ export const getListById = async (listId) => {
   }
 };
 
+export const updateListAlbumOrder = async (listId, albumIds = []) => {
+  if (!listId) {
+    throw new Error("listId is required");
+  }
+
+  const normalizedAlbumIds = Array.isArray(albumIds)
+    ? albumIds
+        .filter((albumId) => typeof albumId === "string")
+        .map((albumId) => albumId.trim())
+        .filter(Boolean)
+    : [];
+
+  const response = await apiFetch(
+    `/lists/${encodeURIComponent(listId)}`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        albumIds: normalizedAlbumIds,
+        albumList: normalizedAlbumIds,
+      }),
+    },
+    { authRequired: true }
+  );
+  const data = await parseJsonSafely(response, "PATCH /lists/:id");
+
+  if (!response.ok) {
+    throw new Error(data?.message || "Failed to update list order");
+  }
+
+  return data;
+};
+
 export const likeList = async (currentUid, listId) => {
   if (!currentUid || !listId) {
     throw new Error("currentUid and listId are required");

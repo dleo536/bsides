@@ -19,9 +19,12 @@ import {
   getListById,
   getListLikeState,
   likeList,
+  updateListAlbumOrder,
   unlikeList,
 } from "../api/ListAPI";
-import { getUsernameByUID } from "../api/UserAPI";
+import { getFullUserByUid, getUsernameByUID } from "../api/UserAPI";
+import ListEditModal from "../components/ListEditModal";
+import ListOptionsSheet from "../components/ListOptionsSheet";
 
 const windowWidth = Dimensions.get("window").width;
 const GRID_GAP = 10;
@@ -54,11 +57,22 @@ export default function ListPage() {
   const [creatorName, setCreatorName] = useState("");
   const [likeLoading, setLikeLoading] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
+  const [currentProfile, setCurrentProfile] = useState(null);
+  const [optionsVisible, setOptionsVisible] = useState(false);
+  const [editVisible, setEditVisible] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState("");
 
   const currentUid = auth?.currentUser?.uid || null;
   const listId = route.params?.listId || listData?.id || initialList?.id || null;
   const albumIds = Array.isArray(listData?.albumList) ? listData.albumList : [];
   const albumIdsKey = useMemo(() => albumIds.join("|"), [albumIds]);
+  const isOwner = Boolean(
+    currentUid &&
+      (currentUid === listData?.firebaseUid ||
+        currentProfile?.id === listData?.ownerId ||
+        currentProfile?.oauthId === listData?.firebaseUid)
+  );
 
   const handleBackPress = useCallback(() => {
     if (navigation.canGoBack()) {
@@ -125,6 +139,27 @@ export default function ListPage() {
   useEffect(() => {
     refreshListData();
   }, [refreshListData]);
+
+  useEffect(() => {
+    if (!currentUid) {
+      setCurrentProfile(null);
+      return;
+    }
+
+    let mounted = true;
+    const loadCurrentProfile = async () => {
+      const userProfile = await getFullUserByUid(currentUid);
+      if (mounted) {
+        setCurrentProfile(userProfile || null);
+      }
+    };
+
+    loadCurrentProfile();
+
+    return () => {
+      mounted = false;
+    };
+  }, [currentUid]);
 
   useEffect(() => {
     if (!listData?.ownerId && !listData?.userID) {
@@ -257,6 +292,51 @@ export default function ListPage() {
     }
   };
 
+  const handleOpenEdit = useCallback(() => {
+    setOptionsVisible(false);
+    setEditError("");
+    setEditVisible(true);
+  }, []);
+
+  const handleSaveReorderedAlbums = useCallback(
+    async (nextAlbumEntries) => {
+      if (!listId || editSaving) {
+        return;
+      }
+
+      const orderedAlbumIds = nextAlbumEntries
+        .map((entry) => entry?.spotifyId || entry?.id)
+        .filter(Boolean);
+
+      setEditSaving(true);
+      setEditError("");
+
+      try {
+        await updateListAlbumOrder(listId, orderedAlbumIds);
+
+        setAlbumEntries(nextAlbumEntries);
+        setListData((currentList) =>
+          currentList
+            ? {
+                ...currentList,
+                albumIds: orderedAlbumIds,
+                albumList: orderedAlbumIds,
+                itemsCount: orderedAlbumIds.length,
+              }
+            : currentList
+        );
+        setEditVisible(false);
+        refreshListData();
+      } catch (error) {
+        console.error("List reorder save error:", error);
+        setEditError("Could not save the new album order. Please try again.");
+      } finally {
+        setEditSaving(false);
+      }
+    },
+    [editSaving, listId, refreshListData]
+  );
+
   if (!listData) {
     return (
       <SafeAreaView style={styles.screen}>
@@ -269,6 +349,28 @@ export default function ListPage() {
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
+      <ListOptionsSheet
+        visible={optionsVisible}
+        listTitle={listData.listName}
+        itemCount={albumEntries.length || albumIds.length}
+        onClose={() => setOptionsVisible(false)}
+        onEditList={handleOpenEdit}
+      />
+      <ListEditModal
+        visible={editVisible}
+        listTitle={listData.listName}
+        items={albumEntries}
+        loading={albumsLoading}
+        saving={editSaving}
+        errorMessage={editError}
+        onClose={() => {
+          if (!editSaving) {
+            setEditVisible(false);
+            setEditError("");
+          }
+        }}
+        onSave={handleSaveReorderedAlbums}
+      />
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.container}
@@ -288,27 +390,42 @@ export default function ListPage() {
             <Text style={styles.title}>{listData.listName}</Text>
             {creatorName ? <Text style={styles.creator}>By @{creatorName}</Text> : null}
           </View>
-          <TouchableOpacity
-            onPress={handleLikePress}
-            style={styles.likeButton}
-            disabled={likeLoading}
-            activeOpacity={0.82}
-          >
-            {likeLoading ? (
-              <ActivityIndicator size="small" color="#111827" />
-            ) : (
-              <>
+          <View style={styles.headerActions}>
+            {isOwner ? (
+              <TouchableOpacity
+                onPress={() => setOptionsVisible(true)}
+                style={styles.optionsButton}
+                activeOpacity={0.82}
+              >
                 <Ionicons
-                  name={isLiked ? "thumbs-up" : "thumbs-up-outline"}
+                  name="ellipsis-horizontal-outline"
                   size={20}
-                  color={isLiked ? "#2563eb" : "#111827"}
+                  color="#111827"
                 />
-                <Text style={[styles.likeCount, isLiked && styles.likeCountActive]}>
-                  {Number(listData?.likesCount || 0)}
-                </Text>
-              </>
-            )}
-          </TouchableOpacity>
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity
+              onPress={handleLikePress}
+              style={styles.likeButton}
+              disabled={likeLoading}
+              activeOpacity={0.82}
+            >
+              {likeLoading ? (
+                <ActivityIndicator size="small" color="#111827" />
+              ) : (
+                <>
+                  <Ionicons
+                    name={isLiked ? "thumbs-up" : "thumbs-up-outline"}
+                    size={20}
+                    color={isLiked ? "#2563eb" : "#111827"}
+                  />
+                  <Text style={[styles.likeCount, isLiked && styles.likeCountActive]}>
+                    {Number(listData?.likesCount || 0)}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
 
         {listData.listDescription ? (
@@ -417,6 +534,11 @@ const styles = StyleSheet.create({
   headerTitleBlock: {
     flex: 1,
   },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   title: {
     fontSize: 24,
     fontWeight: "800",
@@ -439,6 +561,16 @@ const styles = StyleSheet.create({
     backgroundColor: "#f9fafb",
     minWidth: 74,
     justifyContent: "center",
+  },
+  optionsButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    backgroundColor: "#f9fafb",
   },
   likeCount: {
     fontSize: 14,
