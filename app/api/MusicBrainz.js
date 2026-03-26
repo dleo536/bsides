@@ -1,7 +1,7 @@
 //import fetch from "node-fetch";
 
 const HEADERS = {
-  "User-Agent": "bsides/1.0 (dleo536@gmail.com)",
+  "User-Agent": "b.sides/1.0 (support@bsides.invalid)",
 };
 
 const BASE_URL = "https://musicbrainz.org/ws/2";
@@ -17,12 +17,11 @@ export async function searchReleaseGroup(album, artist) {
 
   const res = await fetch(url, {
     headers: {
-      "User-Agent": "BsidesApp/1.0.0 ( your@email.com )",
+      "User-Agent": "b.sides/1.0 (support@bsides.invalid)",
     },
   });
 
   const data = await res.json();
-  console.log("response", data);
   return data["release-groups"]?.[0];
 }
 
@@ -64,7 +63,6 @@ async function getRecordingCredits(recordingId) {
 
 // Filter for mixing/engineering credits
 function findMixingCredits(relations = []) {
-  console.log("-------------> relations " + JSON.stringify(relations));
   return relations.filter(
     (r) =>
       r.type?.toLowerCase().includes("mix") ||
@@ -75,36 +73,20 @@ function findMixingCredits(relations = []) {
 // Main function
 export async function findMixingCreditsFromMusicBrainz(album, artist) {
   try {
-    console.log(`🔍 Searching for "${album}" by ${artist}...`);
     const releaseGroup = await searchReleaseGroup(album, artist);
     if (!releaseGroup) {
-      console.log(`❌ No release group found.`);
       return [];
     }
 
     const releases = await getReleasesFromGroup(releaseGroup.id);
-    console.log(
-      `📦 Found ${releases.length} release(s) under "${releaseGroup.title}"`
-    );
 
     for (const release of releases) {
-      console.log(
-        `🔎 Checking release: ${release.title} (${release.id || "no date"})`
-      );
       const releaseData = await getFullReleaseData(release.id);
 
       // 1. Check release-level credits
       const releaseCredits = findMixingCredits(releaseData.relations || []);
 
       if (releaseCredits.length > 0) {
-        console.log(
-          `\n🎛 Release-level mixing/engineering credits: "${release.title}"`
-        );
-        releaseCredits.forEach((c) => {
-          console.log(
-            `- ${c.artist?.name} (${c.type}) ${c.attributes?.join(", ") || ""}`
-          );
-        });
         return releaseCredits;
       }
 
@@ -117,35 +99,19 @@ export async function findMixingCreditsFromMusicBrainz(album, artist) {
           const recordingId = track.recording?.id;
           if (!recordingId) continue;
 
-          console.log(`🎵 Checking track: ${track.title} (${recordingId})`);
           const recCredits = await getRecordingCredits(recordingId);
           const mixers = findMixingCredits(recCredits);
 
           if (mixers.length > 0) {
-            console.log(
-              `\n🎚 Track-level mixing/engineering credits for "${release.title}":`
-            );
-            console.log(`Track: ${track.title}`);
-            mixers.forEach((c) => {
-              console.log(
-                `- ${c.artist?.name} (${c.type}) ${
-                  c.attributes?.join(", ") || ""
-                }`
-              );
-            });
-            console.log("is it returning early or whhhhhhattttttt?");
             return mixers;
           }
         }
       }
     }
 
-    console.log(
-      "🚫 No mixing/engineering credits found in any versions or tracks."
-    );
     return [];
   } catch (err) {
-    console.error(`❌ Error: ${err.message}`);
+    console.error("Failed to load MusicBrainz mixing credits");
     return [];
   }
 }
@@ -177,7 +143,6 @@ async function getArtistRelationships(artistId) {
 
 function extractMixedReleases(relations) {
   const mixedAlbums = new Set();
-  console.log("relations " + JSON.stringify(relations));
   for (const rel of relations) {
     if (
       (rel.type.toLowerCase().includes("mix") ||
@@ -196,50 +161,29 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function getAlbumsMixedBy(engineerName) {
   try {
-    console.log(`🔍 Searching for artist: ${engineerName}`);
     const artistId = await getArtistId(engineerName);
-    console.log(`✅ Found ID: ${artistId}`);
-
-    console.log(`📦 Fetching relationships...`);
     const relations = await getArtistRelationships(artistId);
-
-    console.log(`🎛 Filtering mixing credits...`);
     const albums = extractMixedReleases(relations);
-
-    console.log(`\n🎧 Albums mixed by ${engineerName}:`);
-    if (albums.length === 0) {
-      console.log("No mixing credits found.");
-    } else {
-      albums.forEach((title) => console.log(`- ${title}`));
-      return albums;
-    }
+    return albums;
   } catch (err) {
-    console.error(`❌ Error: ${err.message}`);
+    console.error("Failed to load MusicBrainz mixed albums");
   }
 }
 
 // Change this name to test others
 export async function getAlbumCreditsByName(album, artist) {
   try {
-    console.log(`🔍 Searching for "${album}" by ${artist}...`);
     const releaseGroup = await searchReleaseGroup(album, artist);
     if (!releaseGroup) {
-      console.log(`❌ No release group found.`);
       return [];
     }
 
     const releases = await getReleasesFromGroup(releaseGroup.id);
-    console.log(
-      `📦 Found ${releases.length} release(s) under "${releaseGroup.title}"`
-    );
 
     const seenNames = new Set();
     const uniquePersonnel = [];
 
     for (const release of releases) {
-      console.log(
-        `🔎 Checking release: ${release.title} (${release.id || "no date"})`
-      );
       const releaseData = await getFullReleaseData(release.id);
 
       // 1. Release-level personnel
@@ -265,7 +209,6 @@ export async function getAlbumCreditsByName(album, artist) {
           const recordingId = track.recording?.id;
           if (!recordingId) continue;
 
-          console.log(`🎵 Checking track: ${track.title} (${recordingId})`);
           const recCredits = await getRecordingCredits(recordingId);
 
           recCredits.forEach((rel) => {
@@ -287,12 +230,9 @@ export async function getAlbumCreditsByName(album, artist) {
       if (uniquePersonnel.length > 0) break; // remove if you want all releases checked
     }
 
-    console.log(
-      `✅ Found ${uniquePersonnel[0].name} unique people (by name only).`
-    );
     return uniquePersonnel;
   } catch (err) {
-    console.error(`❌ Error: ${err.message}`);
+    console.error("Failed to load MusicBrainz album credits");
     return [];
   }
 }
@@ -328,6 +268,48 @@ async function getWikipediaSummary(resourceUrl) {
       : null;
 
   return summary;
+}
+
+const normalizeSearchLabel = (value) =>
+  typeof value === "string" ? value.trim().toLowerCase() : "";
+
+async function searchArtist(artistName) {
+  await sleep(1000);
+  const query = encodeURIComponent(`artist:${artistName}`);
+  const url = `${BASE_URL}/artist/?query=${query}&fmt=json`;
+  const res = await fetch(url, { headers: HEADERS });
+
+  if (!res.ok) {
+    return null;
+  }
+
+  const data = await res.json();
+  const artists = Array.isArray(data?.artists) ? data.artists : [];
+
+  if (artists.length === 0) {
+    return null;
+  }
+
+  const normalizedQuery = normalizeSearchLabel(artistName);
+  const exactMatch = artists.find((artist) => {
+    const name = normalizeSearchLabel(artist?.name);
+    const sortName = normalizeSearchLabel(artist?.["sort-name"]);
+    return name === normalizedQuery || sortName === normalizedQuery;
+  });
+
+  return exactMatch || artists[0];
+}
+
+async function getArtistMetadata(artistId) {
+  await sleep(1000);
+  const url = `${BASE_URL}/artist/${artistId}?inc=url-rels+annotation&fmt=json`;
+  const res = await fetch(url, { headers: HEADERS });
+
+  if (!res.ok) {
+    return null;
+  }
+
+  return res.json();
 }
 
 export async function getAlbumDescriptionFromMusicBrainz(album, artist) {
@@ -387,7 +369,68 @@ export async function getAlbumDescriptionFromMusicBrainz(album, artist) {
 
     return { description: "", source: null };
   } catch (error) {
-    console.error("getAlbumDescriptionFromMusicBrainz error:", error);
+    console.error("Failed to load album description");
+    return { description: "", source: null };
+  }
+}
+
+export async function getArtistDescriptionFromMusicBrainz(artistName) {
+  try {
+    const artist = await searchArtist(artistName);
+    if (!artist?.id) {
+      return { description: "", source: null };
+    }
+
+    const metadata = await getArtistMetadata(artist.id);
+    const wikipediaRelation = Array.isArray(metadata?.relations)
+      ? metadata.relations.find((relation) => {
+          const relationType = relation?.type?.toLowerCase?.() || "";
+          const resource = relation?.url?.resource || "";
+          return (
+            relationType === "wikipedia" ||
+            resource.includes("wikipedia.org/wiki/")
+          );
+        })
+      : null;
+
+    if (wikipediaRelation?.url?.resource) {
+      const summary = await getWikipediaSummary(wikipediaRelation.url.resource);
+      if (summary) {
+        return {
+          description: summary,
+          source: "MusicBrainz-linked Wikipedia",
+        };
+      }
+    }
+
+    const annotation =
+      typeof metadata?.annotation === "string" && metadata.annotation.trim()
+        ? metadata.annotation.trim()
+        : null;
+    if (annotation) {
+      return {
+        description: annotation,
+        source: "MusicBrainz annotation",
+      };
+    }
+
+    const disambiguation =
+      typeof metadata?.disambiguation === "string" && metadata.disambiguation.trim()
+        ? metadata.disambiguation.trim()
+        : typeof artist?.disambiguation === "string" && artist.disambiguation.trim()
+        ? artist.disambiguation.trim()
+        : null;
+
+    if (disambiguation) {
+      return {
+        description: disambiguation,
+        source: "MusicBrainz artist",
+      };
+    }
+
+    return { description: "", source: null };
+  } catch (error) {
+    console.error("Failed to load artist description");
     return { description: "", source: null };
   }
 }

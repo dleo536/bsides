@@ -1,7 +1,7 @@
 import { Review } from "../logic/Review";
 import { apiFetch } from "./apiClient";
 import { getAlbumName, getAlbumCover, getAlbum } from "./SpotifyAPI";
-import { getUsernameByUID } from "./UserAPI";
+import { getUsernameByUID, resolveBackendUserId } from "./UserAPI";
 import API_BASE_URL from "../config/api";
 import { auth } from "../config/firebase";
 
@@ -14,11 +14,7 @@ const parseJsonSafely = async (response, label) => {
   try {
     return JSON.parse(raw);
   } catch (error) {
-    console.warn(
-      `${label} returned non-JSON payload`,
-      response.status,
-      raw.slice(0, 160)
-    );
+    console.warn(`${label} returned non-JSON payload`, response.status);
     return null;
   }
 };
@@ -50,11 +46,6 @@ export const getAllReviews = async (limit = 5, offset = 0, viewerUid = null) => 
     const json = await parseJsonSafely(response, "GET /reviews");
 
     if (!response.ok || !json) {
-      console.error("[getAllReviews] request failed", {
-        requestUrl,
-        status: response.status,
-        body: json,
-      });
       return [];
     }
 
@@ -63,12 +54,15 @@ export const getAllReviews = async (limit = 5, offset = 0, viewerUid = null) => 
     const reviewArray = await Promise.all(reviews.map(jsonToReviews));
     return reviewArray;
   } catch (error) {
-    console.error(error);
-    console.log("This be throwing an error!");
+    console.error("Failed to load reviews");
+    return [];
   }
 };
 export const getReviewsByUID = async (uid) => {
-  const requestUrl = `${API_BASE_URL}/reviews?userID=${encodeURIComponent(uid)}`;
+  const resolvedUserId = (await resolveBackendUserId(uid)) || uid;
+  const requestUrl = `${API_BASE_URL}/reviews?userID=${encodeURIComponent(
+    resolvedUserId
+  )}`;
   const response = await apiFetch(requestUrl, {
     method: "GET",
     headers: {
@@ -81,11 +75,6 @@ export const getReviewsByUID = async (uid) => {
   const json = await parseJsonSafely(response, "GET /reviews by user");
 
   if (!response.ok || !json) {
-    console.error("[getReviewsByUID] request failed", {
-      requestUrl,
-      status: response.status,
-      body: json,
-    });
     return [];
   }
 
@@ -131,11 +120,6 @@ export const getReviewsByAlbum = async (
     const json = await parseJsonSafely(response, "GET /reviews album lookup");
 
     if (!response.ok || !json) {
-      console.error("[getReviewsByAlbum] request failed", {
-        requestUrl,
-        status: response.status,
-        body: json,
-      });
       return { data: [], hasMore: false, totalCount: 0 };
     }
 
@@ -148,7 +132,7 @@ export const getReviewsByAlbum = async (
       totalCount: Number(json?.totalCount || 0),
     };
   } catch (error) {
-    console.error("getReviewsByAlbum error:", error);
+    console.error("Failed to load album reviews");
     return { data: [], hasMore: false, totalCount: 0 };
   }
 };
@@ -167,7 +151,6 @@ export const postReview = async (_ignoredUserId, reviewData) => {
 
     delete createDto.userId;
     delete createDto.firebaseUid;
-    delete createDto.visibility;
 
     const response = await apiFetch("/reviews", {
       method: "POST",
@@ -180,17 +163,12 @@ export const postReview = async (_ignoredUserId, reviewData) => {
     const data = await parseJsonSafely(response, "POST /reviews");
 
     if (response.ok) {
-      console.log("Success:", data);
       return data;
     } else {
-      console.error("[postReview] request failed", {
-        status: response.status,
-        body: data,
-      });
       return { error: data };
     }
   } catch (error) {
-    console.error("Fetch error:", error);
+    console.error("Failed to create review");
     throw error;
   }
 };
@@ -220,7 +198,7 @@ export const getReviewById = async (reviewId) => {
 
     return await jsonToReviews(json);
   } catch (error) {
-    console.error("Error fetching review:", error);
+    console.error("Failed to load review");
     throw error;
   }
 };
@@ -235,7 +213,6 @@ export const updateReview = async (reviewId, reviewData) => {
   try {
     // If reviewData is a Review instance, convert it to DTO format
     const updateDto = reviewData.toUpdateDto ? reviewData.toUpdateDto() : reviewData;
-    delete updateDto.visibility;
 
     const response = await apiFetch(`/reviews/${reviewId}`, {
       method: "PATCH",
@@ -248,14 +225,12 @@ export const updateReview = async (reviewId, reviewData) => {
     const data = await parseJsonSafely(response, "PATCH /reviews/:id");
 
     if (response.ok) {
-      console.log("Review updated successfully:", data);
       return data;
     } else {
-      console.error("Error updating review:", data);
       return { error: data };
     }
   } catch (error) {
-    console.error("Fetch error:", error);
+    console.error("Failed to update review");
     throw error;
   }
 };
@@ -276,15 +251,13 @@ export const deleteReview = async (reviewId) => {
     }, { authRequired: true });
 
     if (response.ok) {
-      console.log("Review deleted successfully");
       return { success: true };
     } else {
       const data = await response.json();
-      console.error("Error deleting review:", data);
       return { error: data };
     }
   } catch (error) {
-    console.error("Fetch error:", error);
+    console.error("Failed to delete review");
     throw error;
   }
 };
@@ -343,7 +316,7 @@ const jsonToReviews = async (jsonResponse) => {
         }
       }
     } catch (error) {
-      console.log("Could not fetch Spotify data for review:", error);
+      console.error("Failed to enrich review album data");
     }
   }
   
@@ -351,11 +324,10 @@ const jsonToReviews = async (jsonResponse) => {
   try {
     review.username = await getUsernameByUID(review.userId);
   } catch (error) {
-    console.log("Could not fetch username for review:", error);
+    console.error("Failed to enrich review username");
     review.username = null;
   }
-  
-  console.log("review ID:", review.id, "Album:", review.albumTitleSnapshot);
+
   return review;
 };
 //export { getAllReviews };

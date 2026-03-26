@@ -37,6 +37,7 @@ import ReviewElement from "../components/reviewElement";
 import defaultProfileImage from "../../assets/defaultProfilePicture.png";
 import {
   followUser,
+  getCurrentUserProfile,
   getFollowState,
   getProfileImageForUser,
   getUserByIdentifier,
@@ -51,6 +52,7 @@ const UserPage = () => {
   const { user } = route.params; // 👈 user object passed in
 
   const [profileUser, setProfileUser] = useState(user);
+  const [currentAppUser, setCurrentAppUser] = useState(null);
   const [activeTab, setActiveTab] = useState("lists");
   const [lists, setLists] = useState([]);
   const [reviews, setReviews] = useState([]);
@@ -61,13 +63,14 @@ const UserPage = () => {
   const [followError, setFollowError] = useState("");
 
   const currentUid = auth?.currentUser?.uid;
-  const routeUserIdentifier = user?.id || user?.oauthId || user?.uid;
+  const routeUserIdentifier = user?.id || user?.uid;
   const profileUserIdentifier =
-    profileUser?.id || profileUser?.oauthId || profileUser?.uid || routeUserIdentifier;
+    profileUser?.id || profileUser?.uid || routeUserIdentifier;
   const isOwnProfile =
     !!currentUid &&
-    (currentUid === profileUser?.oauthId ||
-      currentUid === profileUser?.uid ||
+    (currentUid === profileUser?.uid ||
+      currentAppUser?.id === profileUser?.id ||
+      currentAppUser?.id === profileUserIdentifier ||
       currentUid === profileUserIdentifier);
   const profileDisplayName =
     profileUser?.displayName || profileUser?.name || profileUser?.username || "User";
@@ -84,6 +87,30 @@ const UserPage = () => {
   useEffect(() => {
     setProfileUser(user);
   }, [user]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadCurrentAppUser = async () => {
+      if (!currentUid) {
+        if (mounted) {
+          setCurrentAppUser(null);
+        }
+        return;
+      }
+
+      const currentUser = await getCurrentUserProfile();
+      if (mounted) {
+        setCurrentAppUser(currentUser || null);
+      }
+    };
+
+    loadCurrentAppUser();
+
+    return () => {
+      mounted = false;
+    };
+  }, [currentUid]);
 
   useEffect(() => {
     if (!routeUserIdentifier) return;
@@ -129,7 +156,6 @@ const UserPage = () => {
     };
   }, [
     profileUser?.id,
-    profileUser?.oauthId,
     profileUser?.uid,
     profileUser?.avatarUrl,
     profileUser?.photoURL,

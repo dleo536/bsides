@@ -17,6 +17,7 @@ import { updateProfile } from "firebase/auth";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useNavigation } from "@react-navigation/native";
 import { auth, storage } from "../config/firebase";
+import { updateCurrentUserProfile } from "../api/UserAPI";
 import defaultProfileImage from "../../assets/defaultProfilePicture.png";
 
 const ProfilePicturePage = () => {
@@ -89,6 +90,7 @@ const ProfilePicturePage = () => {
       const downloadURL = await getDownloadURL(storageRef);
 
       await updateProfile(user, { photoURL: downloadURL });
+      await updateCurrentUserProfile({ avatarUrl: downloadURL });
       await user.reload();
       await finishOnboarding();
     } catch (error) {

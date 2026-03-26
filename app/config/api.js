@@ -31,8 +31,6 @@ try {
   // If @env is not available, use default
   // You can also manually set the URL here for quick testing:
   // API_BASE_URL = 'http://localhost:3000';
-  console.log('Using default API URL. Install react-native-dotenv and create .env file for environment variables.');
 }
 
 export default API_BASE_URL;
-

@@ -50,7 +50,7 @@ const UserSearchResultRow = ({ item, onPress }) => {
     return () => {
       mounted = false;
     };
-  }, [item?.id, item?.oauthId, item?.uid, item?.avatarUrl, item?.photoURL]);
+  }, [item?.id, item?.uid, item?.avatarUrl, item?.photoURL]);
 
   return (
     <TouchableOpacity onPress={onPress}>

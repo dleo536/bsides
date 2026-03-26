@@ -69,9 +69,7 @@ export default function ListPage() {
   const albumIdsKey = useMemo(() => albumIds.join("|"), [albumIds]);
   const isOwner = Boolean(
     currentUid &&
-      (currentUid === listData?.firebaseUid ||
-        currentProfile?.id === listData?.ownerId ||
-        currentProfile?.oauthId === listData?.firebaseUid)
+      currentProfile?.id === listData?.ownerId
   );
 
   const handleBackPress = useCallback(() => {

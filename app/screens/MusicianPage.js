@@ -59,7 +59,6 @@ const AlbumPage = (route) => {
     fetchAlbums();
   }, []);
   async function albumProcessing(albums) {
-    console.log("------------albums: ", albums);
     const albumsProcessed = await Promise.all(
       albums.map(async (album) => {
         const albumData = await getAlbumsByName(album.title);

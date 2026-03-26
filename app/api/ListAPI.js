@@ -2,9 +2,10 @@ import { List } from "../logic/List";
 import { apiFetch } from "./apiClient";
 import {
   getUsernameByUID,
-  getFullUserByUid,
+  resolveBackendUserId,
 } from "./UserAPI";
 import API_BASE_URL from "../config/api";
+import { auth } from "../config/firebase";
 
 const parseJsonSafely = async (response, label) => {
   const raw = await response.text();
@@ -15,11 +16,7 @@ const parseJsonSafely = async (response, label) => {
   try {
     return JSON.parse(raw);
   } catch (error) {
-    console.warn(
-      `${label} returned non-JSON payload`,
-      response.status,
-      raw.slice(0, 160)
-    );
+    console.warn(`${label} returned non-JSON payload`, response.status);
     return null;
   }
 };
@@ -56,22 +53,15 @@ export const getAllLists = async (limit = 5, offset = 0, viewerUid = null) => {
     const json = await parseJsonSafely(response, "GET /lists");
 
     if (!response.ok || !json) {
-      console.error("[getAllLists] request failed", {
-        requestUrl,
-        status: response.status,
-        body: json,
-      });
       return [];
     }
 
     const jsonData = json.data || [];
-    console.log("getAll List params: ", limit, offset);
     const listArray = await Promise.all(jsonData.map(jsonToLists));
-    //console.log("List Array " + listArray);
     return listArray;
   } catch (error) {
-    console.error(error);
-    console.log("This be throwing an error!");
+    console.error("Failed to load lists");
+    return [];
   }
 };
 
@@ -89,28 +79,27 @@ export const searchListsByTitle = async (title, page = 0, limit = 10) => {
       offset: String(page * limit),
     });
     const requestUrl = `${API_BASE_URL}/lists?${searchParams.toString()}`;
-    const response = await fetch(requestUrl, {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
+    const response = await apiFetch(
+      requestUrl,
+      {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
       },
-    });
+      { authRequired: Boolean(auth.currentUser) }
+    );
     const json = await parseJsonSafely(response, "GET /lists title search");
 
     if (!response.ok || !json) {
-      console.error("[searchListsByTitle] request failed", {
-        requestUrl,
-        status: response.status,
-        body: json,
-      });
       return [];
     }
 
     const jsonData = Array.isArray(json?.data) ? json.data : [];
     return Promise.all(jsonData.map(jsonToLists));
   } catch (error) {
-    console.error("searchListsByTitle error:", error);
+    console.error("Failed to search lists");
     return [];
   }
 };
@@ -132,21 +121,20 @@ export const getListsByAlbumId = async (
       offset: String(offset),
     });
     const requestUrl = `${API_BASE_URL}/lists?${searchParams.toString()}`;
-    const response = await fetch(requestUrl, {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
+    const response = await apiFetch(
+      requestUrl,
+      {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
       },
-    });
+      { authRequired: Boolean(auth.currentUser) }
+    );
     const json = await parseJsonSafely(response, "GET /lists album lookup");
 
     if (!response.ok || !json) {
-      console.error("[getListsByAlbumId] request failed", {
-        requestUrl,
-        status: response.status,
-        body: json,
-      });
       return { data: [], hasMore: false, totalCount: 0 };
     }
 
@@ -159,7 +147,7 @@ export const getListsByAlbumId = async (
       totalCount: Number(json?.totalCount || 0),
     };
   } catch (error) {
-    console.error("getListsByAlbumId error:", error);
+    console.error("Failed to load album lists");
     return { data: [], hasMore: false, totalCount: 0 };
   }
 };
@@ -178,16 +166,14 @@ export const getHasMore = async (limit = 5, offset = 0) => {
     );
     const json = await parseJsonSafely(response, "GET /lists hasMore");
     const jsonData = json?.hasMore;
-    console.log("getHasMore call: ", jsonData);
-    //console.log("List Array " + listArray);
     return jsonData;
   } catch (error) {
-    console.error(error);
-    console.log("This be throwing an error!");
+    console.error("Failed to load list pagination state");
+    return false;
   }
 };
 export const getListByUID = async (uid) => {
-  fetchData = {
+  const fetchData = {
     method: "GET",
     headers: {
       Accept: "application/json",
@@ -195,67 +181,32 @@ export const getListByUID = async (uid) => {
     },
   };
   try {
-    const fullUser = await getFullUserByUid(uid);
-    const candidateIds = [uid];
-    if (fullUser?.id && !candidateIds.includes(fullUser.id)) {
-      candidateIds.push(fullUser.id);
-    }
-    if (fullUser?.oauthId && !candidateIds.includes(fullUser.oauthId)) {
-      candidateIds.push(fullUser.oauthId);
-    }
-
-    let failedRequests = 0;
-    const listBuckets = await Promise.all(
-      candidateIds.map(async (candidateId) => {
-        const requestUrl = `${API_BASE_URL}/lists?userID=${encodeURIComponent(
-          candidateId
-        )}`;
-        const response = await fetch(
-          requestUrl,
-          fetchData
-        );
-        if (!response.ok) {
-          failedRequests += 1;
-          const errorBody = await response.text();
-          console.error("[getListByUID] list fetch failed", {
-            requestUrl,
-            status: response.status,
-            body: errorBody?.slice?.(0, 400) || errorBody || "",
-          });
-          return [];
-        }
-        const json = await parseJsonSafely(response, "GET /lists");
-        if (!json) {
-          failedRequests += 1;
-          console.error("[getListByUID] empty/non-JSON list response", {
-            requestUrl,
-            status: response.status,
-          });
-          return [];
-        }
-        return json?.data || [];
-      })
+    const resolvedUserId = (await resolveBackendUserId(uid)) || uid;
+    const requestUrl = `${API_BASE_URL}/lists?userID=${encodeURIComponent(
+      resolvedUserId
+    )}`;
+    const response = await apiFetch(
+      requestUrl,
+      fetchData,
+      { authRequired: Boolean(auth.currentUser) }
     );
 
-    const mergedLists = listBuckets.flat();
-    const dedupedLists = Array.from(
-      new Map(mergedLists.map((list) => [list.id, list])).values()
-    );
-
-    if (failedRequests === candidateIds.length && dedupedLists.length === 0) {
+    if (!response.ok) {
       throw new Error("Unable to fetch lists from backend");
     }
 
+    const json = await parseJsonSafely(response, "GET /lists");
+    const dedupedLists = Array.isArray(json?.data) ? json.data : [];
+
     if (dedupedLists.length === 0) {
-      return dedupedLists;
-    } else {
-      const listArray = await Promise.all(dedupedLists.map(jsonToLists));
-      console.log("listArray " + listArray[0].listName);
-      return listArray;
+      return [];
     }
+
+    const listArray = await Promise.all(dedupedLists.map(jsonToLists));
+    return listArray;
   } catch (error) {
-    console.error(error);
-    console.log("This be throwing an error!");
+    console.error("Failed to load user lists");
+    return [];
   }
 };
 
@@ -266,27 +217,26 @@ export const getListById = async (listId) => {
 
   try {
     const requestUrl = `${API_BASE_URL}/lists/detail/${encodeURIComponent(listId)}`;
-    const response = await fetch(requestUrl, {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
+    const response = await apiFetch(
+      requestUrl,
+      {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
       },
-    });
+      { authRequired: Boolean(auth.currentUser) }
+    );
     const json = await parseJsonSafely(response, "GET /lists/detail/:id");
 
     if (!response.ok || !json) {
-      console.error("[getListById] request failed", {
-        requestUrl,
-        status: response.status,
-        body: json,
-      });
       return null;
     }
 
     return await jsonToLists(json);
   } catch (error) {
-    console.error("getListById error:", error);
+    console.error("Failed to load list");
     return null;
   }
 };
@@ -432,7 +382,7 @@ export const getMyLikedLists = async (
       totalCount: Number(json?.totalCount || 0),
     };
   } catch (error) {
-    console.error("getMyLikedLists error:", error);
+    console.error("Failed to load liked lists");
     return { data: [], hasMore: false, totalCount: 0 };
   }
 };
@@ -461,14 +411,12 @@ export const patchAlbumList = async (list, id) => {
     const data = await parseJsonSafely(response, "PATCH /lists/:id");
 
     if (response.ok) {
-      console.log("Success:", data);
       return data;
     } else {
-      console.error("Error:", data);
       return data;
     }
   } catch (error) {
-    console.error("Fetch error:", error);
+    console.error("Failed to update list");
   }
 };
 /**
@@ -498,14 +446,12 @@ export const postList = async (uid, description, name) => {
     const data = await parseJsonSafely(response, "POST /lists");
 
     if (response.ok) {
-      console.log("Success:", data);
       return data;
     } else {
-      console.error("Error:", data);
       return data;
     }
   } catch (error) {
-    console.error("Fetch error:", error);
+    console.error("Failed to create list");
   }
 };
 /**
@@ -560,14 +506,12 @@ export const postListWithType = async (uid, type) => {
     const data = await parseJsonSafely(response, "POST /lists");
 
     if (response.ok) {
-      console.log("Post with type Success:", data);
       return data.id ?? data.insertedId;
     } else {
-      console.error("Error:", data);
       return response;
     }
   } catch (error) {
-    console.error("Fetch error:", error);
+    console.error("Failed to create system list");
   }
 };
 
@@ -602,6 +546,5 @@ const jsonToLists = async (jsonResponse) => {
       percentageListened: data.percentageListened || 0,
     });
   
-  console.log("list ID:", list.id, "Title:", list.title);
   return list;
 };

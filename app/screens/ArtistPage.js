@@ -18,7 +18,8 @@ import {
   getArtistById,
   getArtistByName,
 } from "../api/SpotifyAPI";
-import { getDiscogsArtistBio, getDiscogsArtistImage } from "../api/Discogs";
+import { getDiscogsArtistImage } from "../api/Discogs";
+import { getArtistDescriptionFromMusicBrainz } from "../api/MusicBrainz";
 
 const BIO_COLLAPSE_LENGTH = 320;
 const PAGE_PADDING = 20;
@@ -161,6 +162,7 @@ export default function ArtistPage() {
   const [artistData, setArtistData] = useState(initialArtist);
   const [artistImageUri, setArtistImageUri] = useState(getArtistImageUrl(initialArtist));
   const [bio, setBio] = useState("");
+  const [bioSource, setBioSource] = useState(null);
   const [artistAlbums, setArtistAlbums] = useState([]);
   const [pageLoading, setPageLoading] = useState(true);
   const [albumsLoading, setAlbumsLoading] = useState(true);
@@ -198,6 +200,7 @@ export default function ArtistPage() {
       setAlbumsLoading(true);
       setBioLoading(true);
       setIsBioExpanded(false);
+      setBioSource(null);
 
       let resolvedArtist = initialArtist;
 
@@ -233,7 +236,9 @@ export default function ArtistPage() {
 
       const [albumsResult, bioResult, fallbackImageResult] = await Promise.allSettled([
         artistId ? getAlbumsByArtist(artistId) : Promise.resolve([]),
-        artistName ? getDiscogsArtistBio(artistName) : Promise.resolve(""),
+        artistName
+          ? getArtistDescriptionFromMusicBrainz(artistName)
+          : Promise.resolve({ description: "", source: null }),
         !spotifyImageUri && artistName
           ? getDiscogsArtistImage(artistName)
           : Promise.resolve(spotifyImageUri || null),
@@ -251,9 +256,11 @@ export default function ArtistPage() {
       setAlbumsLoading(false);
 
       if (bioResult.status === "fulfilled") {
-        setBio(sanitizeBioText(bioResult.value));
+        setBio(sanitizeBioText(bioResult.value?.description || ""));
+        setBioSource(bioResult.value?.source || null);
       } else {
         setBio("");
+        setBioSource(null);
       }
       setBioLoading(false);
 
@@ -355,6 +362,7 @@ export default function ArtistPage() {
           ) : bio ? (
             <>
               <Text style={styles.bioText}>{visibleBio}</Text>
+              {bioSource ? <Text style={styles.bioSourceText}>{bioSource}</Text> : null}
               {shouldCollapseBio ? (
                 <TouchableOpacity
                   activeOpacity={0.8}
@@ -600,6 +608,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 24,
     color: "#374151",
+  },
+  bioSourceText: {
+    marginTop: 12,
+    fontSize: 12,
+    lineHeight: 16,
+    color: "#9ca3af",
+    fontWeight: "600",
   },
   readMoreButton: {
     alignSelf: "flex-start",

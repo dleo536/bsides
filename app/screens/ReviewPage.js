@@ -144,7 +144,7 @@ const buildArtistNavigationPayload = (review, albumData, artistData) => {
 };
 
 const buildUserNavigationPayload = (review, authorUser) => {
-  if (authorUser?.id || authorUser?.oauthId || authorUser?.uid) {
+  if (authorUser?.id || authorUser?.uid) {
     return authorUser;
   }
 
@@ -343,7 +343,7 @@ export default function ReviewPage() {
         nextUser = await getUserByIdentifier(reviewData.userId);
       }
 
-      if (!nextUser?.id && !nextUser?.oauthId && !nextUser?.uid) {
+      if (!nextUser?.id && !nextUser?.uid) {
         Alert.alert("User unavailable", "We could not load that user right now.");
         return;
       }

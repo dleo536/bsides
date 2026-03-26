@@ -24,6 +24,8 @@ import {
   Pressable,
   TextInput,
   FlatList,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { useRoute } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
@@ -33,7 +35,10 @@ import { LinearGradient } from "expo-linear-gradient";
 import { postReview } from "../api/ReviewAPI";
 import { Review } from "../logic/Review";
 import { getListByUID, patchAlbumList, postList } from "../api/ListAPI";
-import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaProvider,
+  SafeAreaView,
+} from "react-native-safe-area-context";
 import { ScrollView } from "react-native";
 import {
   getAlbumDescriptionFromMusicBrainz,
@@ -41,6 +46,20 @@ import {
 } from "../api/MusicBrainz";
 
 const RATING_INPUT_PATTERN = /^(?:10(?:\.0?)?|[0-9](?:\.\d?)?)?$/;
+const REVIEW_VISIBILITY_OPTIONS = [
+  {
+    value: "public",
+    label: "Public",
+    description: "Visible to everyone who can view this album.",
+    icon: "globe-outline",
+  },
+  {
+    value: "private",
+    label: "Private",
+    description: "Only visible to you on your account.",
+    icon: "lock-closed-outline",
+  },
+];
 
 const parseReviewRatingInput = (value) => {
   if (typeof value !== "string") {
@@ -321,7 +340,6 @@ const AlbumPage = (route) => {
   const windowHeight = Dimensions.get("window").height;
 
   const newRoute = useRoute(); // Get route object
-  console.log("Route Params:", newRoute.params); // Debugging log
   const { album } = newRoute.params; // Correctly destructure the album parameter
   const [albumData, setAlbumData] = useState(album || {}); // Initialize state with passed album
 
@@ -332,6 +350,9 @@ const AlbumPage = (route) => {
   const [listModalVisible, setListModalVisible] = useState(false);
   const [rating, setRating] = useState("");
   const [description, setDescription] = useState("");
+  const [reviewVisibility, setReviewVisibility] = useState("public");
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewError, setReviewError] = useState("");
   const [listReturned, setListReturned] = useState();
   const [selectedIds, setSelectedIds] = useState([]);
   const [trackList, setTrackList] = useState([]);
@@ -349,6 +370,20 @@ const AlbumPage = (route) => {
   const [listsError, setListsError] = useState("");
 
   const navigation = useNavigation();
+  const openReviewComposer = useCallback(() => {
+    setReviewError("");
+    setReviewModalVisible(true);
+  }, []);
+
+  const closeReviewComposer = useCallback(() => {
+    setReviewModalVisible(false);
+    setReviewError("");
+    setReviewSubmitting(false);
+    setRating("");
+    setDescription("");
+    setReviewVisibility("public");
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
 
@@ -479,7 +514,7 @@ const AlbumPage = (route) => {
     try {
       const lists = await getListByUID(currentUid);
       if (!Array.isArray(lists)) {
-        console.error("[AlbumPage] getListByUID returned non-array", lists);
+        console.error("Failed to load lists");
         setListsError("Could not load your lists. Please try again.");
         setListReturned([]);
         setShowCreateList(false);
@@ -488,7 +523,7 @@ const AlbumPage = (route) => {
         setShowCreateList(lists.length === 0);
       }
     } catch (error) {
-      console.error("[AlbumPage] failed to load lists for modal", error);
+      console.error("Failed to load lists");
       setListsError("Could not load your lists. Please try again.");
       setListReturned([]);
       setShowCreateList(false);
@@ -502,7 +537,6 @@ const AlbumPage = (route) => {
         ? prevIds.filter((prevId) => prevId !== listSelected)
         : [...prevIds, listSelected]
     );
-    console.log(selectedIds);
   };
   const submitReview = async (rating, description) => {
     //create review object with local data and data from review modal
@@ -511,15 +545,19 @@ const AlbumPage = (route) => {
     try {
       const firebaseUid = auth.currentUser?.uid;
       if (!firebaseUid) {
-        alert("You must be logged in to submit a review");
+        setReviewError("You need to be signed in to post a review.");
         return;
       }
+
+      setReviewSubmitting(true);
+      setReviewError("");
 
       let ratingHalfSteps = null;
       if (typeof rating === "string" && rating.trim()) {
         ratingHalfSteps = parseReviewRatingInput(rating);
         if (ratingHalfSteps === null) {
-          alert("Ratings can use at most one decimal place, like 9.2.");
+          setReviewError("Ratings can use at most one decimal place, like 9.2.");
+          setReviewSubmitting(false);
           return;
         }
       }
@@ -529,7 +567,8 @@ const AlbumPage = (route) => {
       const artistName = albumData.artists?.[0]?.name || '';
       
       if (!albumTitle || !artistName) {
-        alert("Missing album information. Please try again.");
+        setReviewError("Album information is missing. Please try again.");
+        setReviewSubmitting(false);
         return;
       }
 
@@ -541,7 +580,7 @@ const AlbumPage = (route) => {
           releaseGroupMbId = releaseGroup.id;
         }
       } catch (mbError) {
-        console.log("Could not fetch MusicBrainz ID:", mbError);
+        console.error("Could not resolve MusicBrainz release group");
         // Continue without it - backend may need to handle this
       }
 
@@ -562,23 +601,24 @@ const AlbumPage = (route) => {
         ratingHalfSteps: ratingHalfSteps,
         body: description || null,
         isDraft: false,
-        visibility: 'public',
+        visibility: reviewVisibility,
       });
 
-      await postReview(null, review);
-      console.log("----------->>>>>>>>>> 999939393 ---->> review submitted: ", review);
-      setReviewModalVisible(false);
-      setRating("");
-      setDescription("");
+      const reviewResult = await postReview(null, review);
+      if (reviewResult?.error) {
+        throw new Error("Review creation failed");
+      }
+      closeReviewComposer();
     } catch (error) {
-      console.log("Error submitting review:", error);
-      alert("Failed to submit review. Please try again.");
+      console.error("Failed to submit review");
+      setReviewError("Failed to submit review. Please try again.");
+    } finally {
+      setReviewSubmitting(false);
     }
   };
 
   const submitLists = async () => {
     //for each item in ListArray
-    console.log(selectedIds);
     selectedIds.forEach(async (id) => {
       let currentList = listReturned.find((list) => list.id === id);
 
@@ -812,53 +852,110 @@ const AlbumPage = (route) => {
               animationType="slide"
               onRequestClose={() => setActionModalVisible(false)}
             >
-              <View style={styles.centeredView}>
-                <View style={styles.actionModalView}>
-                  <View style={styles.modalHeader}>
-                    <Text style={styles.modalTitle}>What would you like to do?</Text>
-                    <TouchableOpacity
-                      onPress={() => setActionModalVisible(false)}
-                      style={styles.closeButton}
-                    >
-                      <Ionicons name="close" size={24} color="#333" />
-                    </TouchableOpacity>
+              <View style={styles.reviewSheetOverlay}>
+                <Pressable
+                  style={styles.reviewSheetBackdrop}
+                  onPress={() => setActionModalVisible(false)}
+                />
+                <SafeAreaView
+                  style={styles.reviewSheetSafeArea}
+                  edges={["top", "bottom"]}
+                >
+                  <View style={styles.actionSheet}>
+                    <View style={styles.reviewSheetHandle} />
+                    <View style={styles.reviewSheetHeader}>
+                      <View>
+                        <Text style={styles.reviewSheetEyebrow}>Album actions</Text>
+                        <Text style={styles.actionSheetTitle}>
+                          What would you like to do?
+                        </Text>
+                        <Text style={styles.actionSheetSubtitle}>
+                          Add this album to your writing or your lists.
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => setActionModalVisible(false)}
+                        style={styles.reviewSheetCloseButton}
+                      >
+                        <Ionicons name="close" size={22} color="#111827" />
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={styles.actionSheetContent}>
+                      <TouchableOpacity
+                        style={styles.actionChoiceButton}
+                        onPress={() => {
+                          setActionModalVisible(false);
+                          openReviewComposer();
+                        }}
+                        activeOpacity={0.88}
+                      >
+                        <View style={styles.actionChoiceIconWrap}>
+                          <Ionicons
+                            name="create-outline"
+                            size={20}
+                            color="#111827"
+                          />
+                        </View>
+                        <View style={styles.actionChoiceCopy}>
+                          <Text style={styles.actionChoiceTitle}>
+                            Review this album
+                          </Text>
+                          <Text style={styles.actionChoiceDescription}>
+                            Rate it, write your thoughts, and choose public or private.
+                          </Text>
+                        </View>
+                        <Ionicons
+                          name="chevron-forward"
+                          size={18}
+                          color="#9ca3af"
+                        />
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.actionChoiceButton}
+                        onPress={async () => {
+                          setActionModalVisible(false);
+                          await onAddToListPress();
+                        }}
+                        activeOpacity={0.88}
+                      >
+                        <View style={styles.actionChoiceIconWrap}>
+                          <Ionicons
+                            name="list-outline"
+                            size={20}
+                            color="#111827"
+                          />
+                        </View>
+                        <View style={styles.actionChoiceCopy}>
+                          <Text style={styles.actionChoiceTitle}>Add to list</Text>
+                          <Text style={styles.actionChoiceDescription}>
+                            Drop it into one of your lists or create a new one.
+                          </Text>
+                        </View>
+                        <Ionicons
+                          name="chevron-forward"
+                          size={18}
+                          color="#9ca3af"
+                        />
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={styles.reviewSheetFooter}>
+                      <Pressable
+                        style={[
+                          styles.reviewFooterButton,
+                          styles.reviewFooterButtonSecondary,
+                        ]}
+                        onPress={() => setActionModalVisible(false)}
+                      >
+                        <Text style={styles.reviewFooterButtonSecondaryText}>
+                          Cancel
+                        </Text>
+                      </Pressable>
+                    </View>
                   </View>
-                  
-                  <View style={styles.actionModalContent}>
-                    <TouchableOpacity
-                      style={styles.actionButton}
-                      onPress={() => {
-                        setActionModalVisible(false);
-                        setReviewModalVisible(true);
-                      }}
-                    >
-                      <Ionicons name="star-outline" size={28} color="#007AFF" />
-                      <Text style={styles.actionButtonText}>Review this album</Text>
-                      <Ionicons name="chevron-forward" size={20} color="#999" />
-                    </TouchableOpacity>
-                    
-                    <TouchableOpacity
-                      style={styles.actionButton}
-                      onPress={async () => {
-                        setActionModalVisible(false);
-                        await onAddToListPress();
-                      }}
-                    >
-                      <Ionicons name="list-outline" size={28} color="#007AFF" />
-                      <Text style={styles.actionButtonText}>Add to list</Text>
-                      <Ionicons name="chevron-forward" size={20} color="#999" />
-                    </TouchableOpacity>
-                  </View>
-                  
-                  <View style={styles.modalFooter}>
-                    <Pressable
-                      style={[styles.modalButton, styles.buttonSecondary]}
-                      onPress={() => setActionModalVisible(false)}
-                    >
-                      <Text style={styles.buttonSecondaryText}>Cancel</Text>
-                    </Pressable>
-                  </View>
-                </View>
+                </SafeAreaView>
               </View>
             </Modal>
 
@@ -867,65 +964,215 @@ const AlbumPage = (route) => {
               visible={reviewModalVisible}
               transparent
               animationType="slide"
-              onRequestClose={() => setReviewModalVisible(false)}
+              onRequestClose={() => {
+                if (!reviewSubmitting) {
+                  closeReviewComposer();
+                }
+              }}
             >
-              <View style={styles.centeredView}>
-                <View style={styles.modalView}>
-                  <View style={styles.modalHeader}>
-                    <Text style={styles.modalTitle}>Write a Review</Text>
-                    <TouchableOpacity
-                      onPress={() => setReviewModalVisible(false)}
-                      style={styles.closeButton}
-                    >
-                      <Ionicons name="close" size={24} color="#333" />
-                    </TouchableOpacity>
-                  </View>
-                  
-                  <View style={styles.modalContent}>
-                    <Text style={styles.inputLabel}>Rating</Text>
-                    <TextInput
-                      placeholder="e.g., 9.2"
-                      value={rating}
-                      onChangeText={(nextValue) => {
-                        const normalizedValue = nextValue.replace(/,/g, ".");
-                        if (RATING_INPUT_PATTERN.test(normalizedValue)) {
-                          setRating(normalizedValue);
-                        }
-                      }}
-                      keyboardType="decimal-pad"
-                      style={styles.modalInput}
-                    />
-                    <Text style={styles.inputHelperText}>
-                      Optional. Use up to one decimal place, like 9.2.
-                    </Text>
-                    
-                    <Text style={styles.inputLabel}>Review</Text>
-                    <TextInput
-                      placeholder="Share your thoughts about this album..."
-                      value={description}
-                      onChangeText={setDescription}
-                      multiline
-                      numberOfLines={6}
-                      textAlignVertical="top"
-                      style={[styles.modalInput, styles.textArea]}
-                    />
-                  </View>
-                  
-                  <View style={styles.modalFooter}>
-                    <Pressable
-                      style={[styles.modalButton, styles.buttonSecondary]}
-                      onPress={() => setReviewModalVisible(false)}
-                    >
-                      <Text style={styles.buttonSecondaryText}>Cancel</Text>
-                    </Pressable>
-                    <Pressable
-                      style={[styles.modalButton, styles.buttonPrimary]}
-                      onPress={() => submitReview(rating, description)}
-                    >
-                      <Text style={styles.buttonPrimaryText}>Submit Review</Text>
-                    </Pressable>
-                  </View>
-                </View>
+              <View style={styles.reviewSheetOverlay}>
+                <Pressable
+                  style={styles.reviewSheetBackdrop}
+                  onPress={closeReviewComposer}
+                  disabled={reviewSubmitting}
+                />
+                <SafeAreaView style={styles.reviewSheetSafeArea} edges={["top", "bottom"]}>
+                  <KeyboardAvoidingView
+                    behavior={Platform.OS === "ios" ? "padding" : undefined}
+                    style={styles.reviewSheetKeyboard}
+                  >
+                    <View style={styles.reviewSheet}>
+                      <View style={styles.reviewSheetHandle} />
+                      <View style={styles.reviewSheetHeader}>
+                        <View>
+                          <Text style={styles.reviewSheetEyebrow}>New review</Text>
+                          <Text style={styles.reviewSheetTitle}>
+                            Write about this album
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          onPress={closeReviewComposer}
+                          style={styles.reviewSheetCloseButton}
+                          disabled={reviewSubmitting}
+                        >
+                          <Ionicons name="close" size={22} color="#111827" />
+                        </TouchableOpacity>
+                      </View>
+
+                      <ScrollView
+                        style={styles.reviewSheetScroll}
+                        contentContainerStyle={styles.reviewSheetContent}
+                        showsVerticalScrollIndicator={false}
+                        keyboardShouldPersistTaps="handled"
+                      >
+                        <View style={styles.reviewAlbumCard}>
+                          {albumData?.images?.[0]?.url ? (
+                            <Image
+                              source={{ uri: albumData.images[0].url }}
+                              style={styles.reviewAlbumArt}
+                            />
+                          ) : (
+                            <View
+                              style={[
+                                styles.reviewAlbumArt,
+                                styles.reviewAlbumArtFallback,
+                              ]}
+                            >
+                              <Ionicons name="disc-outline" size={24} color="#6b7280" />
+                            </View>
+                          )}
+                          <View style={styles.reviewAlbumMeta}>
+                            <Text style={styles.reviewAlbumTitle} numberOfLines={2}>
+                              {albumData?.name || "Unknown album"}
+                            </Text>
+                            <Text style={styles.reviewAlbumArtist} numberOfLines={1}>
+                              {albumData?.artists?.[0]?.name || "Unknown artist"}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {reviewError ? (
+                          <View style={styles.reviewErrorBanner}>
+                            <Ionicons
+                              name="alert-circle-outline"
+                              size={18}
+                              color="#b91c1c"
+                            />
+                            <Text style={styles.reviewErrorBannerText}>
+                              {reviewError}
+                            </Text>
+                          </View>
+                        ) : null}
+
+                        <View style={styles.reviewSection}>
+                          <Text style={styles.reviewSectionLabel}>Rating</Text>
+                          <TextInput
+                            placeholder="e.g., 9.2"
+                            value={rating}
+                            onChangeText={(nextValue) => {
+                              const normalizedValue = nextValue.replace(/,/g, ".");
+                              if (RATING_INPUT_PATTERN.test(normalizedValue)) {
+                                setRating(normalizedValue);
+                              }
+                            }}
+                            keyboardType="decimal-pad"
+                            style={styles.reviewTextInput}
+                            placeholderTextColor="#9ca3af"
+                          />
+                          <Text style={styles.reviewSectionHelper}>
+                            Optional. Use up to one decimal place, like 9.2.
+                          </Text>
+                        </View>
+
+                        <View style={styles.reviewSection}>
+                          <Text style={styles.reviewSectionLabel}>Review</Text>
+                          <TextInput
+                            placeholder="Share what stood out, what hit hardest, or what fell flat..."
+                            value={description}
+                            onChangeText={setDescription}
+                            multiline
+                            numberOfLines={7}
+                            textAlignVertical="top"
+                            style={[styles.reviewTextInput, styles.reviewTextArea]}
+                            placeholderTextColor="#9ca3af"
+                          />
+                        </View>
+
+                        <View style={styles.reviewSection}>
+                          <Text style={styles.reviewSectionLabel}>Visibility</Text>
+                          <Text style={styles.reviewSectionHelper}>
+                            Choose who can read this review.
+                          </Text>
+                          <View style={styles.reviewVisibilityList}>
+                            {REVIEW_VISIBILITY_OPTIONS.map((option) => {
+                              const isSelected = reviewVisibility === option.value;
+                              return (
+                                <Pressable
+                                  key={option.value}
+                                  style={[
+                                    styles.reviewVisibilityOption,
+                                    isSelected &&
+                                      styles.reviewVisibilityOptionSelected,
+                                  ]}
+                                  onPress={() => setReviewVisibility(option.value)}
+                                >
+                                  <View
+                                    style={[
+                                      styles.reviewVisibilityIconWrap,
+                                      isSelected &&
+                                        styles.reviewVisibilityIconWrapSelected,
+                                    ]}
+                                  >
+                                    <Ionicons
+                                      name={option.icon}
+                                      size={18}
+                                      color={isSelected ? "#111827" : "#6b7280"}
+                                    />
+                                  </View>
+                                  <View style={styles.reviewVisibilityCopy}>
+                                    <Text style={styles.reviewVisibilityLabel}>
+                                      {option.label}
+                                    </Text>
+                                    <Text
+                                      style={styles.reviewVisibilityDescription}
+                                    >
+                                      {option.description}
+                                    </Text>
+                                  </View>
+                                  <View
+                                    style={[
+                                      styles.reviewVisibilityRadio,
+                                      isSelected &&
+                                        styles.reviewVisibilityRadioSelected,
+                                    ]}
+                                  >
+                                    {isSelected ? (
+                                      <View
+                                        style={styles.reviewVisibilityRadioDot}
+                                      />
+                                    ) : null}
+                                  </View>
+                                </Pressable>
+                              );
+                            })}
+                          </View>
+                        </View>
+                      </ScrollView>
+
+                      <View style={styles.reviewSheetFooter}>
+                        <Pressable
+                          style={[
+                            styles.reviewFooterButton,
+                            styles.reviewFooterButtonSecondary,
+                          ]}
+                          onPress={closeReviewComposer}
+                          disabled={reviewSubmitting}
+                        >
+                          <Text style={styles.reviewFooterButtonSecondaryText}>
+                            Cancel
+                          </Text>
+                        </Pressable>
+                        <Pressable
+                          style={[
+                            styles.reviewFooterButton,
+                            styles.reviewFooterButtonPrimary,
+                            reviewSubmitting && styles.reviewFooterButtonDisabled,
+                          ]}
+                          onPress={() => submitReview(rating, description)}
+                          disabled={reviewSubmitting}
+                        >
+                          {reviewSubmitting ? (
+                            <ActivityIndicator size="small" color="#ffffff" />
+                          ) : (
+                            <Text style={styles.reviewFooterButtonPrimaryText}>
+                              Save review
+                            </Text>
+                          )}
+                        </Pressable>
+                      </View>
+                    </View>
+                  </KeyboardAvoidingView>
+                </SafeAreaView>
               </View>
             </Modal>
 
@@ -936,177 +1183,313 @@ const AlbumPage = (route) => {
               animationType="slide"
               onRequestClose={() => setListModalVisible(false)}
             >
-              <View style={styles.centeredView}>
-                <View style={styles.modalView}>
-                  <View style={styles.modalHeader}>
-                    <Text style={styles.modalTitle}>Add to List</Text>
-                    <TouchableOpacity
-                      onPress={() => setListModalVisible(false)}
-                      style={styles.closeButton}
-                    >
-                      <Ionicons name="close" size={24} color="#333" />
-                    </TouchableOpacity>
-                  </View>
-                  
-                  <View style={styles.listContainer}>
-                    {listsLoading ? (
-                      <View style={styles.loadingState}>
-                        <ActivityIndicator size="small" color="#007AFF" />
-                        <Text style={styles.loadingText}>Loading your lists...</Text>
-                      </View>
-                    ) : listsError ? (
-                      <View style={styles.errorState}>
-                        <Text style={styles.errorText}>{listsError}</Text>
-                        <View style={styles.errorActions}>
-                          <Pressable
-                            style={[styles.modalButton, styles.buttonSecondary]}
-                            onPress={onAddToListPress}
-                          >
-                            <Text style={styles.buttonSecondaryText}>Retry</Text>
-                          </Pressable>
-                          <Pressable
-                            style={[styles.modalButton, styles.buttonPrimary]}
-                            onPress={() => {
-                              setListsError("");
-                              setShowCreateList(true);
-                            }}
-                          >
-                            <Text style={styles.buttonPrimaryText}>Create List</Text>
-                          </Pressable>
+              <View style={styles.reviewSheetOverlay}>
+                <Pressable
+                  style={styles.reviewSheetBackdrop}
+                  onPress={() => setListModalVisible(false)}
+                />
+                <SafeAreaView
+                  style={styles.reviewSheetSafeArea}
+                  edges={["top", "bottom"]}
+                >
+                  <KeyboardAvoidingView
+                    behavior={Platform.OS === "ios" ? "padding" : undefined}
+                    style={styles.reviewSheetKeyboard}
+                  >
+                    <View style={styles.listSheet}>
+                      <View style={styles.reviewSheetHandle} />
+                      <View style={styles.reviewSheetHeader}>
+                        <View>
+                          <Text style={styles.reviewSheetEyebrow}>Add to list</Text>
+                          <Text style={styles.listSheetTitle}>Save this album to a list</Text>
+                          <Text style={styles.listSheetSubtitle}>
+                            Pick one of your lists or create a new one for it.
+                          </Text>
                         </View>
-                      </View>
-                    ) : showCreateList || (listReturned && listReturned.length === 0) ? (
-                      <View style={styles.createListContainer}>
-                        <Text style={styles.createListTitle}>Create New List</Text>
-                        <Text style={styles.createListSubtitle}>
-                          Create a new list and add this album to it
-                        </Text>
-                        
-                        <Text style={styles.inputLabel}>List Name *</Text>
-                        <TextInput
-                          placeholder="e.g., My Favorite Albums"
-                          value={newListName}
-                          onChangeText={setNewListName}
-                          style={styles.modalInput}
-                          autoFocus
-                        />
-                        
-                        <Text style={styles.inputLabel}>Description (Optional)</Text>
-                        <TextInput
-                          placeholder="Add a description for your list..."
-                          value={newListDescription}
-                          onChangeText={setNewListDescription}
-                          multiline
-                          numberOfLines={3}
-                          textAlignVertical="top"
-                          style={[styles.modalInput, styles.textArea]}
-                        />
-                      </View>
-                    ) : listReturned && listReturned.length > 0 ? (
-                      <>
                         <TouchableOpacity
-                          style={styles.createNewListButton}
-                          onPress={() => setShowCreateList(true)}
+                          onPress={() => setListModalVisible(false)}
+                          style={styles.reviewSheetCloseButton}
                         >
-                          <Ionicons name="add-circle-outline" size={20} color="#007AFF" />
-                          <Text style={styles.createNewListButtonText}>Create New List</Text>
+                          <Ionicons name="close" size={22} color="#111827" />
                         </TouchableOpacity>
-                        <FlatList
-                          data={listReturned}
-                          keyExtractor={(item) => item.id}
-                          renderItem={({ item }) => (
-                            <TouchableOpacity
+                      </View>
+
+                      <ScrollView
+                        style={styles.listSheetScroll}
+                        contentContainerStyle={styles.listSheetContent}
+                        showsVerticalScrollIndicator={false}
+                        keyboardShouldPersistTaps="handled"
+                      >
+                        <View style={styles.reviewAlbumCard}>
+                          {albumData?.images?.[0]?.url ? (
+                            <Image
+                              source={{ uri: albumData.images[0].url }}
+                              style={styles.reviewAlbumArt}
+                            />
+                          ) : (
+                            <View
                               style={[
-                                styles.listItem,
-                                selectedIds.includes(item.id) && styles.selectedListItem,
+                                styles.reviewAlbumArt,
+                                styles.reviewAlbumArtFallback,
                               ]}
-                              onPress={() => {
-                                if (selectedIds.includes(item.id)) {
-                                  setSelectedIds(
-                                    selectedIds.filter((id) => id !== item.id)
-                                  );
-                                } else {
-                                  setSelectedIds([...selectedIds, item.id]);
-                                }
-                              }}
                             >
-                              <Text style={styles.listItemText}>{item.listName}</Text>
-                              {selectedIds.includes(item.id) && (
-                                <Ionicons name="checkmark-circle" size={24} color="#007AFF" />
-                              )}
-                            </TouchableOpacity>
+                              <Ionicons name="disc-outline" size={24} color="#6b7280" />
+                            </View>
                           )}
-                          style={styles.listFlatList}
-                        />
-                      </>
-                    ) : (
-                      <View style={styles.emptyListContainer}>
-                        <Text style={styles.emptyListText}>No lists available</Text>
-                        <TouchableOpacity
-                          style={styles.createListButton}
+                          <View style={styles.reviewAlbumMeta}>
+                            <Text style={styles.reviewAlbumTitle} numberOfLines={2}>
+                              {albumData?.name || "Unknown album"}
+                            </Text>
+                            <Text style={styles.reviewAlbumArtist} numberOfLines={1}>
+                              {albumData?.artists?.[0]?.name || "Unknown artist"}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {listsLoading ? (
+                          <View style={styles.listSheetStatusCard}>
+                            <ActivityIndicator size="small" color="#111827" />
+                            <Text style={styles.listSheetStatusText}>
+                              Loading your lists...
+                            </Text>
+                          </View>
+                        ) : listsError ? (
+                          <View style={styles.reviewErrorBanner}>
+                            <Ionicons
+                              name="alert-circle-outline"
+                              size={18}
+                              color="#b91c1c"
+                            />
+                            <View style={styles.listSheetErrorCopy}>
+                              <Text style={styles.reviewErrorBannerText}>
+                                {listsError}
+                              </Text>
+                              <View style={styles.listSheetErrorActions}>
+                                <Pressable
+                                  style={[
+                                    styles.reviewFooterButton,
+                                    styles.reviewFooterButtonSecondary,
+                                  ]}
+                                  onPress={onAddToListPress}
+                                >
+                                  <Text
+                                    style={styles.reviewFooterButtonSecondaryText}
+                                  >
+                                    Retry
+                                  </Text>
+                                </Pressable>
+                                <Pressable
+                                  style={[
+                                    styles.reviewFooterButton,
+                                    styles.reviewFooterButtonPrimary,
+                                  ]}
+                                  onPress={() => {
+                                    setListsError("");
+                                    setShowCreateList(true);
+                                  }}
+                                >
+                                  <Text
+                                    style={styles.reviewFooterButtonPrimaryText}
+                                  >
+                                    Create list
+                                  </Text>
+                                </Pressable>
+                              </View>
+                            </View>
+                          </View>
+                        ) : showCreateList || (listReturned && listReturned.length === 0) ? (
+                          <View style={styles.listCreateCard}>
+                            <Text style={styles.listCreateTitle}>Create a new list</Text>
+                            <Text style={styles.listCreateSubtitle}>
+                              Start a fresh list and add this album right away.
+                            </Text>
+
+                            <View style={styles.reviewSection}>
+                              <Text style={styles.reviewSectionLabel}>List name</Text>
+                              <TextInput
+                                placeholder="e.g., My Favorite Albums"
+                                value={newListName}
+                                onChangeText={setNewListName}
+                                style={styles.reviewTextInput}
+                                autoFocus
+                                placeholderTextColor="#9ca3af"
+                              />
+                            </View>
+
+                            <View style={styles.reviewSection}>
+                              <Text style={styles.reviewSectionLabel}>
+                                Description
+                              </Text>
+                              <TextInput
+                                placeholder="Add a short note for this list..."
+                                value={newListDescription}
+                                onChangeText={setNewListDescription}
+                                multiline
+                                numberOfLines={3}
+                                textAlignVertical="top"
+                                style={[styles.reviewTextInput, styles.listCreateTextArea]}
+                                placeholderTextColor="#9ca3af"
+                              />
+                            </View>
+                          </View>
+                        ) : listReturned && listReturned.length > 0 ? (
+                          <View style={styles.listSelectionSection}>
+                            <TouchableOpacity
+                              style={styles.listCreateInlineButton}
+                              onPress={() => setShowCreateList(true)}
+                              activeOpacity={0.88}
+                            >
+                              <Ionicons
+                                name="add-circle-outline"
+                                size={18}
+                                color="#111827"
+                              />
+                              <Text style={styles.listCreateInlineButtonText}>
+                                Create new list
+                              </Text>
+                            </TouchableOpacity>
+
+                            <FlatList
+                              data={listReturned}
+                              keyExtractor={(item) => item.id}
+                              scrollEnabled={false}
+                              contentContainerStyle={styles.listSelectionList}
+                              renderItem={({ item }) => {
+                                const isSelected = selectedIds.includes(item.id);
+                                return (
+                                  <TouchableOpacity
+                                    style={[
+                                      styles.listSelectionCard,
+                                      isSelected && styles.listSelectionCardSelected,
+                                    ]}
+                                    onPress={() => {
+                                      if (isSelected) {
+                                        setSelectedIds(
+                                          selectedIds.filter((id) => id !== item.id)
+                                        );
+                                      } else {
+                                        setSelectedIds([...selectedIds, item.id]);
+                                      }
+                                    }}
+                                    activeOpacity={0.88}
+                                  >
+                                    <View style={styles.listSelectionTextWrap}>
+                                      <Text
+                                        style={styles.listSelectionTitle}
+                                        numberOfLines={1}
+                                      >
+                                        {item.title || item.listName || "Untitled List"}
+                                      </Text>
+                                      <Text
+                                        style={styles.listSelectionMeta}
+                                        numberOfLines={1}
+                                      >
+                                        {typeof item?.itemsCount === "number"
+                                          ? `${item.itemsCount} album${
+                                              item.itemsCount === 1 ? "" : "s"
+                                            }`
+                                          : "Album list"}
+                                      </Text>
+                                    </View>
+                                    <View
+                                      style={[
+                                        styles.listSelectionCheck,
+                                        isSelected &&
+                                          styles.listSelectionCheckSelected,
+                                      ]}
+                                    >
+                                      {isSelected ? (
+                                        <Ionicons
+                                          name="checkmark"
+                                          size={14}
+                                          color="#ffffff"
+                                        />
+                                      ) : null}
+                                    </View>
+                                  </TouchableOpacity>
+                                );
+                              }}
+                            />
+                          </View>
+                        ) : (
+                          <View style={styles.listEmptyCard}>
+                            <Text style={styles.listEmptyTitle}>No lists yet</Text>
+                            <Text style={styles.listEmptySubtitle}>
+                              Create your first list and add this album to it.
+                            </Text>
+                            <TouchableOpacity
+                              style={styles.listCreateInlineButton}
+                              onPress={() => setShowCreateList(true)}
+                              activeOpacity={0.88}
+                            >
+                              <Ionicons
+                                name="add-circle-outline"
+                                size={18}
+                                color="#111827"
+                              />
+                              <Text style={styles.listCreateInlineButtonText}>
+                                Create a new list
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                      </ScrollView>
+
+                      <View style={styles.reviewSheetFooter}>
+                        <Pressable
+                          style={[
+                            styles.reviewFooterButton,
+                            styles.reviewFooterButtonSecondary,
+                          ]}
                           onPress={() => {
                             setListModalVisible(false);
-                            setCreateListModalVisible(true);
+                            setShowCreateList(false);
+                            setNewListName("");
+                            setNewListDescription("");
                           }}
                         >
-                          <Ionicons name="add-circle-outline" size={20} color="#007AFF" />
-                          <Text style={styles.createListButtonText}>Create a new list</Text>
-                        </TouchableOpacity>
+                          <Text style={styles.reviewFooterButtonSecondaryText}>
+                            Cancel
+                          </Text>
+                        </Pressable>
+                        {!listsLoading && !listsError && (
+                          showCreateList || (listReturned && listReturned.length === 0) ? (
+                            <Pressable
+                              style={[
+                                styles.reviewFooterButton,
+                                styles.reviewFooterButtonPrimary,
+                                !newListName.trim() && styles.reviewFooterButtonDisabled,
+                              ]}
+                              onPress={createNewListAndAdd}
+                              disabled={!newListName.trim()}
+                            >
+                              <Text style={styles.reviewFooterButtonPrimaryText}>
+                                Create & add
+                              </Text>
+                            </Pressable>
+                          ) : (
+                            <Pressable
+                              style={[
+                                styles.reviewFooterButton,
+                                styles.reviewFooterButtonPrimary,
+                                selectedIds.length === 0 &&
+                                  styles.reviewFooterButtonDisabled,
+                              ]}
+                              onPress={submitLists}
+                              disabled={selectedIds.length === 0}
+                            >
+                              <Text style={styles.reviewFooterButtonPrimaryText}>
+                                Add to{" "}
+                                {selectedIds.length > 0 ? `${selectedIds.length} ` : ""}
+                                List{selectedIds.length !== 1 ? "s" : ""}
+                              </Text>
+                            </Pressable>
+                          )
+                        )}
                       </View>
-                    )}
-                  </View>
-                  
-                  <View style={styles.modalFooter}>
-                    <Pressable
-                      style={[styles.modalButton, styles.buttonSecondary]}
-                      onPress={() => {
-                        setListModalVisible(false);
-                        setShowCreateList(false);
-                        setNewListName("");
-                        setNewListDescription("");
-                      }}
-                    >
-                      <Text style={styles.buttonSecondaryText}>Cancel</Text>
-                    </Pressable>
-                    {!listsLoading && !listsError && (
-                      showCreateList || (listReturned && listReturned.length === 0) ? (
-                        <Pressable
-                          style={[
-                            styles.modalButton, 
-                            styles.buttonPrimary,
-                            !newListName.trim() && styles.buttonDisabled
-                          ]}
-                          onPress={createNewListAndAdd}
-                          disabled={!newListName.trim()}
-                        >
-                          <Text style={[
-                            styles.buttonPrimaryText,
-                            !newListName.trim() && styles.buttonDisabledText
-                          ]}>
-                            Create & Add
-                          </Text>
-                        </Pressable>
-                      ) : (
-                        <Pressable
-                          style={[
-                            styles.modalButton, 
-                            styles.buttonPrimary,
-                            selectedIds.length === 0 && styles.buttonDisabled
-                          ]}
-                          onPress={submitLists}
-                          disabled={selectedIds.length === 0}
-                        >
-                          <Text style={[
-                            styles.buttonPrimaryText,
-                            selectedIds.length === 0 && styles.buttonDisabledText
-                          ]}>
-                            Add to {selectedIds.length > 0 ? `${selectedIds.length} ` : ''}List{selectedIds.length !== 1 ? 's' : ''}
-                          </Text>
-                        </Pressable>
-                      )
-                    )}
-                  </View>
-                </View>
+                    </View>
+                  </KeyboardAvoidingView>
+                </SafeAreaView>
               </View>
             </Modal>
 
@@ -1204,6 +1587,451 @@ const styles = StyleSheet.create({
     justifyContent: "center", 
     alignItems: "center",
     backgroundColor: "rgba(0, 0, 0, 0.5)",
+  },
+  reviewSheetOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(15, 23, 42, 0.42)",
+  },
+  reviewSheetBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  reviewSheetKeyboard: {
+    flex: 1,
+    width: "100%",
+    justifyContent: "flex-end",
+  },
+  reviewSheetSafeArea: {
+    flex: 1,
+    justifyContent: "flex-end",
+    paddingTop: 12,
+  },
+  reviewSheet: {
+    backgroundColor: "#f7f7f5",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    maxHeight: "100%",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderBottomWidth: 0,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: -4,
+    },
+    shadowOpacity: 0.14,
+    shadowRadius: 16,
+    elevation: 18,
+  },
+  reviewSheetHandle: {
+    alignSelf: "center",
+    width: 44,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: "#d1d5db",
+    marginTop: 12,
+  },
+  reviewSheetHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e7eb",
+    backgroundColor: "#fafaf9",
+  },
+  reviewSheetEyebrow: {
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+    color: "#6b7280",
+    marginBottom: 4,
+  },
+  reviewSheetTitle: {
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  reviewSheetCloseButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+  },
+  reviewSheetScroll: {
+    maxHeight: 520,
+  },
+  reviewSheetContent: {
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 14,
+    gap: 18,
+  },
+  reviewAlbumCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    padding: 14,
+    gap: 14,
+  },
+  reviewAlbumArt: {
+    width: 68,
+    height: 68,
+    borderRadius: 10,
+    backgroundColor: "#e5e7eb",
+  },
+  reviewAlbumArtFallback: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  reviewAlbumMeta: {
+    flex: 1,
+    minWidth: 0,
+  },
+  reviewAlbumTitle: {
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: 4,
+  },
+  reviewAlbumArtist: {
+    fontSize: 14,
+    lineHeight: 19,
+    color: "#6b7280",
+  },
+  reviewErrorBanner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: "#fef2f2",
+    borderWidth: 1,
+    borderColor: "#fecaca",
+  },
+  reviewErrorBannerText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+    color: "#991b1b",
+  },
+  reviewSection: {
+    gap: 8,
+  },
+  reviewSectionLabel: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  reviewSectionHelper: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: "#6b7280",
+  },
+  reviewTextInput: {
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    fontSize: 16,
+    color: "#111827",
+  },
+  reviewTextArea: {
+    minHeight: 156,
+    paddingTop: 14,
+  },
+  reviewVisibilityList: {
+    gap: 10,
+  },
+  reviewVisibilityOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    gap: 12,
+  },
+  reviewVisibilityOptionSelected: {
+    borderColor: "#111827",
+    backgroundColor: "#f3f4f6",
+  },
+  reviewVisibilityIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#f3f4f6",
+  },
+  reviewVisibilityIconWrapSelected: {
+    backgroundColor: "#e5e7eb",
+  },
+  reviewVisibilityCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  reviewVisibilityLabel: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: 2,
+  },
+  reviewVisibilityDescription: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: "#6b7280",
+  },
+  reviewVisibilityRadio: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: "#9ca3af",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#ffffff",
+  },
+  reviewVisibilityRadioSelected: {
+    borderColor: "#111827",
+  },
+  reviewVisibilityRadioDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#111827",
+  },
+  reviewSheetFooter: {
+    flexDirection: "row",
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    paddingBottom: 16,
+    borderTopWidth: 1,
+    borderTopColor: "#e5e7eb",
+    backgroundColor: "#fafaf9",
+  },
+  reviewFooterButton: {
+    flex: 1,
+    minHeight: 52,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+  },
+  reviewFooterButtonPrimary: {
+    backgroundColor: "#111827",
+  },
+  reviewFooterButtonSecondary: {
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+  },
+  reviewFooterButtonDisabled: {
+    opacity: 0.6,
+  },
+  reviewFooterButtonPrimaryText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#ffffff",
+  },
+  reviewFooterButtonSecondaryText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  listSheet: {
+    backgroundColor: "#f7f7f5",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderBottomWidth: 0,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: -4,
+    },
+    shadowOpacity: 0.14,
+    shadowRadius: 16,
+    elevation: 18,
+    maxHeight: "100%",
+  },
+  listSheetTitle: {
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  listSheetSubtitle: {
+    marginTop: 6,
+    fontSize: 13,
+    lineHeight: 18,
+    color: "#6b7280",
+  },
+  listSheetScroll: {
+    maxHeight: 540,
+  },
+  listSheetContent: {
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 14,
+    gap: 18,
+  },
+  listSheetStatusCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    minHeight: 96,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 18,
+  },
+  listSheetStatusText: {
+    fontSize: 14,
+    color: "#6b7280",
+  },
+  listSheetErrorCopy: {
+    flex: 1,
+    gap: 12,
+  },
+  listSheetErrorActions: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  listCreateCard: {
+    backgroundColor: "#ffffff",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    padding: 16,
+    gap: 14,
+  },
+  listCreateTitle: {
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  listCreateSubtitle: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: "#6b7280",
+  },
+  listCreateTextArea: {
+    minHeight: 110,
+    paddingTop: 14,
+  },
+  listSelectionSection: {
+    gap: 12,
+  },
+  listCreateInlineButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    minHeight: 48,
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderStyle: "dashed",
+  },
+  listCreateInlineButtonText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  listSelectionList: {
+    gap: 10,
+  },
+  listSelectionCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    gap: 12,
+  },
+  listSelectionCardSelected: {
+    backgroundColor: "#f3f4f6",
+    borderColor: "#111827",
+  },
+  listSelectionTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  listSelectionTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: 3,
+  },
+  listSelectionMeta: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: "#6b7280",
+  },
+  listSelectionCheck: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
+    borderColor: "#9ca3af",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#ffffff",
+  },
+  listSelectionCheckSelected: {
+    backgroundColor: "#111827",
+    borderColor: "#111827",
+  },
+  listEmptyCard: {
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#ffffff",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    paddingHorizontal: 20,
+    paddingVertical: 28,
+  },
+  listEmptyTitle: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  listEmptySubtitle: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: "#6b7280",
+    textAlign: "center",
+    marginBottom: 4,
   },
   modalView: {
     backgroundColor: "white",
@@ -1384,73 +2212,74 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginLeft: 8,
   },
-  actionModalView: {
-    backgroundColor: "white",
-    borderRadius: 16,
-    width: "85%",
-    maxWidth: 400,
+  actionSheet: {
+    backgroundColor: "#f7f7f5",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderBottomWidth: 0,
+    overflow: "hidden",
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: -4,
     },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
+    shadowOpacity: 0.14,
+    shadowRadius: 16,
+    elevation: 18,
   },
-  actionModalContent: {
-    padding: 20,
+  actionSheetTitle: {
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: "700",
+    color: "#111827",
   },
-  actionButton: {
+  actionSheetSubtitle: {
+    marginTop: 6,
+    fontSize: 13,
+    lineHeight: 18,
+    color: "#6b7280",
+  },
+  actionSheetContent: {
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 14,
+    gap: 12,
+  },
+  actionChoiceButton: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 16,
-    marginBottom: 12,
-    backgroundColor: "#F8F8F8",
-    borderRadius: 12,
+    backgroundColor: "#ffffff",
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#E0E0E0",
+    borderColor: "#d1d5db",
+    paddingHorizontal: 14,
+    paddingVertical: 15,
+    gap: 12,
   },
-  actionButtonText: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
-    marginLeft: 12,
-  },
-  actionModalView: {
-    backgroundColor: "white",
-    borderRadius: 16,
-    width: "85%",
-    maxWidth: 400,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  actionModalContent: {
-    padding: 20,
-  },
-  actionButton: {
-    flexDirection: "row",
+  actionChoiceIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     alignItems: "center",
-    padding: 16,
-    marginBottom: 12,
-    backgroundColor: "#F8F8F8",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#E0E0E0",
+    justifyContent: "center",
+    backgroundColor: "#f3f4f6",
   },
-  actionButtonText: {
+  actionChoiceCopy: {
     flex: 1,
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
-    marginLeft: 12,
+    minWidth: 0,
+  },
+  actionChoiceTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: 3,
+  },
+  actionChoiceDescription: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: "#6b7280",
   },
   createListContainer: {
     padding: 20,

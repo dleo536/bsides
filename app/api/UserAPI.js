@@ -1,5 +1,3 @@
-import { ref, getDownloadURL } from "firebase/storage";
-import { storage } from "../config/firebase"; // your config
 import { auth } from "../config/firebase";
 import { apiFetch } from "./apiClient";
 import API_BASE_URL from "../config/api";
@@ -13,11 +11,7 @@ const parseJsonSafely = async (response, label) => {
   try {
     return JSON.parse(raw);
   } catch (error) {
-    console.warn(
-      `${label} returned non-JSON payload`,
-      response.status,
-      raw.slice(0, 160)
-    );
+    console.warn(`${label} returned non-JSON payload`, response.status);
     return null;
   }
 };
@@ -29,86 +23,120 @@ const isUuid = (value) =>
   );
 
 const backendUserIdCache = new Map();
-const profileImageUrlCache = new Map();
-const profileImageExtensions = ["", ".jpg", ".jpeg", ".png", ".webp"];
+let currentUserProfileCache = null;
 
 const normalizeIdentifier = (value) =>
   typeof value === "string" ? value.trim() : "";
 
-const cacheResolvedUser = (user) => {
-  if (user?.id && user?.oauthId) {
-    backendUserIdCache.set(user.oauthId, user.id);
-  }
-};
-
-const getProfileImagePathCandidates = (identifier) => {
-  const normalizedIdentifier = normalizeIdentifier(identifier);
-  if (!normalizedIdentifier) {
-    return [];
-  }
-
-  return profileImageExtensions.map(
-    (extension) => `profileImages/${normalizedIdentifier}${extension}`
-  );
-};
-
-export const getProfileImage = async (identifier) => {
-  const normalizedIdentifier = normalizeIdentifier(identifier);
-  if (!normalizedIdentifier || !storage) {
+const withCurrentAuthShape = (user) => {
+  if (!user) {
     return null;
   }
 
-  if (profileImageUrlCache.has(normalizedIdentifier)) {
-    return profileImageUrlCache.get(normalizedIdentifier);
+  if (!auth.currentUser?.uid) {
+    return user;
   }
 
-  let lastError = null;
+  return {
+    ...user,
+    uid: auth.currentUser.uid,
+    photoURL:
+      typeof auth.currentUser.photoURL === "string"
+        ? auth.currentUser.photoURL
+        : user?.photoURL || null,
+  };
+};
 
-  for (const path of getProfileImagePathCandidates(normalizedIdentifier)) {
-    try {
-      const url = await getDownloadURL(ref(storage, path));
-      profileImageUrlCache.set(normalizedIdentifier, url);
-      return url;
-    } catch (error) {
-      if (error?.code !== "storage/object-not-found") {
-        lastError = error;
-      }
+const cacheResolvedUser = (user, sourceIdentifier = null) => {
+  if (user?.id) {
+    backendUserIdCache.set(user.id, user.id);
+  }
+
+  if (user?.id && sourceIdentifier) {
+    backendUserIdCache.set(sourceIdentifier, user.id);
+  }
+};
+
+const shouldSyncAvatarUrl = (photoURL, avatarUrl) =>
+  typeof photoURL === "string" &&
+  /^https?:\/\//i.test(photoURL) &&
+  photoURL.trim().length > 0 &&
+  photoURL !== avatarUrl;
+
+export const getCurrentUserProfile = async ({ forceRefresh = false } = {}) => {
+  if (!auth.currentUser?.uid) {
+    currentUserProfileCache = null;
+    return null;
+  }
+
+  if (!forceRefresh && currentUserProfileCache?.id) {
+    return currentUserProfileCache;
+  }
+
+  try {
+    const response = await apiFetch("/users/me", {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+    }, { authRequired: true });
+
+    const currentUser = await parseJsonSafely(response, "GET /users/me");
+    if (!response.ok || !currentUser) {
+      return null;
     }
-  }
 
-  if (lastError) {
-    console.error("Image not found or access denied:", lastError);
-  }
+    const hydratedUser = withCurrentAuthShape(currentUser);
+    currentUserProfileCache = hydratedUser;
+    cacheResolvedUser(hydratedUser, auth.currentUser.uid);
 
-  return null;
+    if (
+      shouldSyncAvatarUrl(auth.currentUser.photoURL, hydratedUser?.avatarUrl)
+    ) {
+      try {
+        const syncResult = await updateCurrentUserProfile({
+          avatarUrl: auth.currentUser.photoURL,
+        });
+        const syncedUser = withCurrentAuthShape(syncResult?.user || syncResult);
+        if (syncedUser?.id) {
+          currentUserProfileCache = syncedUser;
+          cacheResolvedUser(syncedUser, auth.currentUser.uid);
+        }
+      } catch (error) {}
+    }
+
+    return currentUserProfileCache;
+  } catch (error) {
+    console.error("Failed to load current user profile");
+    return null;
+  }
 };
 
 export const getUsernameByUID = async (userID) => {
-  let json;
-  fetchData = {
-    method: "GET",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
-  };
   try {
-    const response = await fetch(
-      `${API_BASE_URL}/users/${userID}`
-    );
-    json = await response.json();
-    console.log("Log from USER API:", json.username);
-
-    return json.username;
+    const response = await fetch(`${API_BASE_URL}/users/${userID}`, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+    });
+    const json = await parseJsonSafely(response, "GET /users/:id");
+    return json?.username || null;
   } catch (error) {
-    console.error(error);
-    console.log("This be throwing an error!");
+    console.error("Failed to load username");
+    return null;
   }
 };
 
 export const getUserByIdentifier = async (identifier) => {
   if (!identifier) {
     return null;
+  }
+
+  if (auth.currentUser?.uid && identifier === auth.currentUser.uid) {
+    return getCurrentUserProfile();
   }
 
   try {
@@ -125,19 +153,14 @@ export const getUserByIdentifier = async (identifier) => {
     const user = await parseJsonSafely(response, "GET /users/:id");
 
     if (!response.ok) {
-      console.error("[getUserByIdentifier] request failed", {
-        identifier,
-        status: response.status,
-        body: user,
-      });
       return null;
     }
 
-    cacheResolvedUser(user);
+    cacheResolvedUser(user, identifier);
 
     return user;
   } catch (error) {
-    console.error("getUserByIdentifier error:", error);
+    console.error("Failed to load user");
     return null;
   }
 };
@@ -148,85 +171,16 @@ export const getUserByIdentifier = async (identifier) => {
 export const getFullUserByUid = async (uid) => {
   try {
     if (uid && auth.currentUser?.uid === uid) {
-      const currentUserResponse = await apiFetch("/users/me", {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-        },
-      }, { authRequired: true });
-
-      if (currentUserResponse.ok) {
-        const currentUser = await parseJsonSafely(
-          currentUserResponse,
-          "GET /users/me"
-        );
-        cacheResolvedUser(currentUser);
-        return currentUser;
-      }
+      return getCurrentUserProfile();
     }
 
-    // 1) Direct lookup (backend id or oauthId if supported server-side)
-    let response = await fetch(`${API_BASE_URL}/users/${uid}`, {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-    });
-
-    if (response.ok) {
-      const user = await parseJsonSafely(response, "GET /users/:id");
-      cacheResolvedUser(user);
-      return user;
-    }
-
-    // 2) Query by oauthId
-    response = await fetch(
-      `${API_BASE_URL}/users?oauthId=${encodeURIComponent(uid)}`,
-      {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-        },
-      }
-    );
-    if (response.ok) {
-      const user = await parseJsonSafely(response, "GET /users?oauthId");
-      if (user && user.id) {
-        cacheResolvedUser(user);
-        return user;
-      }
-    }
-
-    // 3) Fallback by username (for older users without oauthId populated)
-    const username = auth.currentUser?.displayName;
-    if (username) {
-      response = await fetch(
-        `${API_BASE_URL}/users?username=${encodeURIComponent(
-          username
-        )}&offset=0&limit=1`,
-        {
-          method: "GET",
-          headers: {
-            Accept: "application/json",
-            "Content-Type": "application/json",
-          },
-        }
-      );
-      if (response.ok) {
-        const users = await parseJsonSafely(response, "GET /users?username");
-        if (Array.isArray(users) && users.length > 0) {
-          cacheResolvedUser(users[0]);
-          return users[0];
-        }
-      }
+    if (isUuid(uid)) {
+      return getUserByIdentifier(uid);
     }
 
     return null;
   } catch (error) {
-    console.error("getFullUserByUid error:", error);
+    console.error("Failed to load current user profile");
     return null;
   }
 };
@@ -239,12 +193,17 @@ export const resolveBackendUserId = async (identifier) => {
     return backendUserIdCache.get(identifier);
   }
 
-  const fullUser = await getFullUserByUid(identifier);
-  const resolvedId = fullUser?.id ?? null;
-  if (resolvedId) {
-    backendUserIdCache.set(identifier, resolvedId);
+  if (auth.currentUser?.uid && identifier === auth.currentUser.uid) {
+    const fullUser = await getCurrentUserProfile();
+    const resolvedId = fullUser?.id ?? null;
+    if (resolvedId) {
+      backendUserIdCache.set(identifier, resolvedId);
+    }
+    return resolvedId;
   }
-  return resolvedId;
+
+  const fullUser = await getUserByIdentifier(identifier);
+  return fullUser?.id ?? null;
 };
 
 export const getProfileImageForUser = async (user) => {
@@ -260,14 +219,17 @@ export const getProfileImageForUser = async (user) => {
     return user.avatarUrl;
   }
 
-  const identifierCandidates = [user?.oauthId, user?.uid]
-    .map(normalizeIdentifier)
-    .filter(Boolean);
-
-  for (const identifier of identifierCandidates) {
-    const imageUrl = await getProfileImage(identifier);
-    if (imageUrl) {
-      return imageUrl;
+  if (
+    auth.currentUser?.uid &&
+    (user?.uid === auth.currentUser.uid ||
+      (currentUserProfileCache?.id && user?.id === currentUserProfileCache.id))
+  ) {
+    const currentUser = await getCurrentUserProfile();
+    if (typeof currentUser?.avatarUrl === "string" && currentUser.avatarUrl.trim()) {
+      return currentUser.avatarUrl;
+    }
+    if (typeof currentUser?.photoURL === "string" && currentUser.photoURL.trim()) {
+      return currentUser.photoURL;
     }
   }
 
@@ -284,58 +246,43 @@ export const getProfileImageForUser = async (user) => {
     if (typeof latestUser?.avatarUrl === "string" && latestUser.avatarUrl.trim()) {
       return latestUser.avatarUrl;
     }
-
-    const refreshedIdentifierCandidates = [latestUser?.oauthId, latestUser?.uid]
-      .map(normalizeIdentifier)
-      .filter(Boolean);
-
-    for (const identifier of refreshedIdentifierCandidates) {
-      const imageUrl = await getProfileImage(identifier);
-      if (imageUrl) {
-        return imageUrl;
-      }
-    }
   }
 
   return null;
 };
 
 export const getUsersByUsername = async (username) => {
-  console.log("Getting user by username:", username);
-  let json;
-  fetchData = {
-    method: "GET",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
-  };
   try {
     const response = await fetch(
-      `${API_BASE_URL}/users?username=${encodeURIComponent(username)}`
+      `${API_BASE_URL}/users?username=${encodeURIComponent(username)}`,
+      {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+      }
     );
-    json = await response.json();
-    console.log("Log from USER API:", json);
-
+    const json = await parseJsonSafely(response, "GET /users");
     return json;
   } catch (error) {
-    console.error(error);
-    console.log("This be throwing an error!");
+    console.error("Failed to search users");
+    return [];
   }
 };
 
 export const getSignupAvailability = async ({ username, email } = {}) => {
-  const searchParams = new URLSearchParams();
+  const requestBody = {};
 
   if (typeof username === "string" && username.trim()) {
-    searchParams.append("username", username.trim());
+    requestBody.username = username.trim();
   }
 
   if (typeof email === "string" && email.trim()) {
-    searchParams.append("email", email.trim());
+    requestBody.email = email.trim();
   }
 
-  if (![...searchParams.keys()].length) {
+  if (!Object.keys(requestBody).length) {
     return {
       usernameAvailable: null,
       emailAvailable: null,
@@ -344,30 +291,24 @@ export const getSignupAvailability = async ({ username, email } = {}) => {
     };
   }
 
-  const requestUrl = `${API_BASE_URL}/users/availability?${searchParams.toString()}`;
-
   try {
-    const response = await fetch(requestUrl, {
-      method: "GET",
+    const response = await fetch(`${API_BASE_URL}/users/availability`, {
+      method: "POST",
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
       },
+      body: JSON.stringify(requestBody),
     });
-    const data = await parseJsonSafely(response, "GET /users/availability");
+    const data = await parseJsonSafely(response, "POST /users/availability");
 
     if (!response.ok || !data) {
-      console.error("[getSignupAvailability] request failed", {
-        requestUrl,
-        status: response.status,
-        body: data,
-      });
       throw new Error(data?.message || "Could not check account availability");
     }
 
     return data;
   } catch (error) {
-    console.error("getSignupAvailability error:", error);
+    console.error("Failed to check account availability");
     throw error;
   }
 };
@@ -403,7 +344,35 @@ export const createBackendUserProfile = async ({
 
     return data;
   } catch (error) {
-    console.error("createBackendUserProfile error:", error);
+    console.error("Failed to create user profile");
+    throw error;
+  }
+};
+
+export const updateCurrentUserProfile = async (updates = {}) => {
+  try {
+    const response = await apiFetch("/users/me", {
+      method: "PATCH",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(updates),
+    }, { authRequired: true });
+    const data = await parseJsonSafely(response, "PATCH /users/me");
+
+    if (!response.ok || !data?.user) {
+      const error = new Error(data?.message || "Could not update user profile");
+      error.status = response.status;
+      error.payload = data;
+      throw error;
+    }
+
+    currentUserProfileCache = withCurrentAuthShape(data.user);
+    cacheResolvedUser(currentUserProfileCache, auth.currentUser?.uid ?? null);
+    return data;
+  } catch (error) {
+    console.error("Failed to update current user profile");
     throw error;
   }
 };
