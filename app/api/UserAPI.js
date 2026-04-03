@@ -25,6 +25,11 @@ const isUuid = (value) =>
 const backendUserIdCache = new Map();
 let currentUserProfileCache = null;
 
+const clearUserCaches = () => {
+  backendUserIdCache.clear();
+  currentUserProfileCache = null;
+};
+
 const normalizeIdentifier = (value) =>
   typeof value === "string" ? value.trim() : "";
 
@@ -65,7 +70,7 @@ const shouldSyncAvatarUrl = (photoURL, avatarUrl) =>
 
 export const getCurrentUserProfile = async ({ forceRefresh = false } = {}) => {
   if (!auth.currentUser?.uid) {
-    currentUserProfileCache = null;
+    clearUserCaches();
     return null;
   }
 
@@ -115,13 +120,17 @@ export const getCurrentUserProfile = async ({ forceRefresh = false } = {}) => {
 
 export const getUsernameByUID = async (userID) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/users/${userID}`, {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
+    const response = await apiFetch(
+      `${API_BASE_URL}/users/${userID}`,
+      {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
       },
-    });
+      { authRequired: Boolean(auth.currentUser) }
+    );
     const json = await parseJsonSafely(response, "GET /users/:id");
     return json?.username || null;
   } catch (error) {
@@ -140,7 +149,7 @@ export const getUserByIdentifier = async (identifier) => {
   }
 
   try {
-    const response = await fetch(
+    const response = await apiFetch(
       `${API_BASE_URL}/users/${encodeURIComponent(identifier)}`,
       {
         method: "GET",
@@ -148,7 +157,8 @@ export const getUserByIdentifier = async (identifier) => {
           Accept: "application/json",
           "Content-Type": "application/json",
         },
-      }
+      },
+      { authRequired: Boolean(auth.currentUser) }
     );
     const user = await parseJsonSafely(response, "GET /users/:id");
 
@@ -253,7 +263,7 @@ export const getProfileImageForUser = async (user) => {
 
 export const getUsersByUsername = async (username) => {
   try {
-    const response = await fetch(
+    const response = await apiFetch(
       `${API_BASE_URL}/users?username=${encodeURIComponent(username)}`,
       {
         method: "GET",
@@ -261,7 +271,8 @@ export const getUsersByUsername = async (username) => {
           Accept: "application/json",
           "Content-Type": "application/json",
         },
-      }
+      },
+      { authRequired: Boolean(auth.currentUser) }
     );
     const json = await parseJsonSafely(response, "GET /users");
     return json;
@@ -271,15 +282,11 @@ export const getUsersByUsername = async (username) => {
   }
 };
 
-export const getSignupAvailability = async ({ username, email } = {}) => {
+export const getSignupAvailability = async ({ username } = {}) => {
   const requestBody = {};
 
   if (typeof username === "string" && username.trim()) {
     requestBody.username = username.trim();
-  }
-
-  if (typeof email === "string" && email.trim()) {
-    requestBody.email = email.trim();
   }
 
   if (!Object.keys(requestBody).length) {
@@ -345,6 +352,36 @@ export const createBackendUserProfile = async ({
     return data;
   } catch (error) {
     console.error("Failed to create user profile");
+    throw error;
+  }
+};
+
+export const deleteCurrentUserAccount = async () => {
+  try {
+    const response = await apiFetch(
+      "/users/me",
+      {
+        method: "DELETE",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+      },
+      { authRequired: true }
+    );
+    const data = await parseJsonSafely(response, "DELETE /users/me");
+
+    if (!response.ok) {
+      const error = new Error(data?.message || "Could not delete your account");
+      error.status = response.status;
+      error.payload = data;
+      throw error;
+    }
+
+    clearUserCaches();
+    return data;
+  } catch (error) {
+    console.error("Failed to delete current user account");
     throw error;
   }
 };

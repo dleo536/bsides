@@ -5,6 +5,7 @@ import {
   getArtistPhotoByAlbum,
 } from "../api/SpotifyAPI";
 import { useNavigation } from "@react-navigation/native";
+import { Ionicons } from "@expo/vector-icons";
 import {
   View,
   Image,
@@ -29,8 +30,8 @@ import { Review } from "../logic/Review";
 import { getListByUID, patchAlbumList } from "../api/ListAPI";
 import { List } from "../logic/List";
 import { getAlbumsMixedBy } from "../api/MusicBrainz";
-import { getMusicianMixedCredits } from "../api/Discogs";
 import { getAlbumList } from "../api/SpotifyAPI";
+import { getProfileIdentity } from "../logic/profileIdentity";
 import ListElement from "../components/listElement";
 import { getReviewsByUID } from "../api/ReviewAPI";
 import ReviewElement from "../components/reviewElement";
@@ -43,6 +44,14 @@ import {
   getUserByIdentifier,
   unfollowUser,
 } from "../api/UserAPI";
+import {
+  blockUserAccount,
+  getUserBlockState,
+  submitContentReport,
+  unblockUserAccount,
+} from "../api/ModerationAPI";
+import ReportContentModal from "../components/ReportContentModal";
+import UserSafetySheet from "../components/UserSafetySheet";
 const UserPage = () => {
   const windowWidth = Dimensions.get("window").width;
   const windowHeight = Dimensions.get("window").height;
@@ -61,28 +70,67 @@ const UserPage = () => {
   const [followStateLoading, setFollowStateLoading] = useState(false);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followError, setFollowError] = useState("");
+  const [blockState, setBlockState] = useState({
+    blocked: false,
+    blockedByYou: false,
+    blockedByUser: false,
+    isSelf: false,
+  });
+  const [blockSubmitting, setBlockSubmitting] = useState(false);
+  const [reportVisible, setReportVisible] = useState(false);
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [safetySheetVisible, setSafetySheetVisible] = useState(false);
 
   const currentUid = auth?.currentUser?.uid;
   const routeUserIdentifier = user?.id || user?.uid;
   const profileUserIdentifier =
     profileUser?.id || profileUser?.uid || routeUserIdentifier;
+  const profileIdentity = getProfileIdentity({
+    ...(user || {}),
+    ...(profileUser || {}),
+  });
   const isOwnProfile =
     !!currentUid &&
     (currentUid === profileUser?.uid ||
       currentAppUser?.id === profileUser?.id ||
       currentAppUser?.id === profileUserIdentifier ||
       currentUid === profileUserIdentifier);
-  const profileDisplayName =
-    profileUser?.displayName || profileUser?.name || profileUser?.username || "User";
-  const profileUsername = profileUser?.username || user?.username || "";
+  const profileDisplayName = profileIdentity.title;
+  const profileUsername = profileIdentity.username;
+  const profileHandle = profileIdentity.handle;
+  const profileSecondaryLabel = profileIdentity.subtitle;
   const followersCount = profileUser?.followersCount ?? 0;
   const followingCount = profileUser?.followingCount ?? 0;
+  const blockedByYou = Boolean(blockState?.blockedByYou);
+  const blockedByUser = Boolean(blockState?.blockedByUser);
+  const showSafetyMenu = Boolean(profileUserIdentifier && !isOwnProfile);
 
   useLayoutEffect(() => {
     navigation.setOptions({
-      title: profileUsername ? `@${profileUsername}` : profileDisplayName,
+      title: profileHandle || profileDisplayName,
+      headerRight: showSafetyMenu
+        ? () => (
+            <TouchableOpacity
+              onPress={() => setSafetySheetVisible(true)}
+              style={styles.headerActionButton}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons
+                name="ellipsis-horizontal-outline"
+                size={22}
+                color="#111827"
+              />
+            </TouchableOpacity>
+          )
+        : () => null,
     });
-  }, [navigation, profileDisplayName, profileUsername]);
+  }, [
+    navigation,
+    profileDisplayName,
+    profileHandle,
+    profileUsername,
+    showSafetyMenu,
+  ]);
 
   useEffect(() => {
     setProfileUser(user);
@@ -197,6 +245,52 @@ const UserPage = () => {
     };
   }, [currentUid, isOwnProfile, profileUserIdentifier]);
 
+  useEffect(() => {
+    if (!currentUid || !profileUserIdentifier || isOwnProfile) {
+      setBlockState({
+        blocked: false,
+        blockedByYou: false,
+        blockedByUser: false,
+        isSelf: Boolean(isOwnProfile),
+      });
+      return;
+    }
+
+    let mounted = true;
+
+    const loadBlockState = async () => {
+      try {
+        const nextBlockState = await getUserBlockState(profileUserIdentifier);
+        if (mounted) {
+          setBlockState(
+            nextBlockState || {
+              blocked: false,
+              blockedByYou: false,
+              blockedByUser: false,
+              isSelf: false,
+            }
+          );
+        }
+      } catch (error) {
+        console.error("loadBlockState error:", error);
+        if (mounted) {
+          setBlockState({
+            blocked: false,
+            blockedByYou: false,
+            blockedByUser: false,
+            isSelf: false,
+          });
+        }
+      }
+    };
+
+    loadBlockState();
+
+    return () => {
+      mounted = false;
+    };
+  }, [currentUid, isOwnProfile, profileUserIdentifier]);
+
   const getLists = async () => {
     if (!profileUserIdentifier) {
       setLists([]);
@@ -240,6 +334,15 @@ const UserPage = () => {
       Alert.alert("Unavailable", "You cannot follow yourself.");
       return;
     }
+    if (blockedByYou || blockedByUser) {
+      Alert.alert(
+        "Unavailable",
+        blockedByYou
+          ? "Unblock this user before following them."
+          : "Following is unavailable because one of you has blocked the other."
+      );
+      return;
+    }
 
     try {
       setFollowLoading(true);
@@ -263,8 +366,143 @@ const UserPage = () => {
     }
   };
 
+  const handleSubmitReport = async ({ reason, details }) => {
+    if (!profileUser?.id) {
+      Alert.alert("Profile unavailable", "We could not resolve this profile for reporting.");
+      return;
+    }
+
+    setReportSubmitting(true);
+
+    try {
+      await submitContentReport({
+        targetType: "user",
+        targetId: profileUser.id,
+        reason,
+        details,
+      });
+      setReportVisible(false);
+      Alert.alert("Report received", "Thanks. We will review this profile.");
+    } catch (error) {
+      console.error("User report error:", error);
+      Alert.alert("Could not report profile", "Please try again in a moment.");
+    } finally {
+      setReportSubmitting(false);
+    }
+  };
+
+  const handleOpenReport = () => {
+    setSafetySheetVisible(false);
+
+    if (!currentUid) {
+      Alert.alert("Sign in required", "Please sign in to report profiles.");
+      return;
+    }
+
+    setReportVisible(true);
+  };
+
+  const executeBlockToggle = async () => {
+    if (!profileUserIdentifier) {
+      return;
+    }
+
+    setBlockSubmitting(true);
+
+    try {
+      const response = blockedByYou
+        ? await unblockUserAccount(profileUserIdentifier)
+        : await blockUserAccount(profileUserIdentifier);
+
+      setBlockState((currentState) => ({
+        ...(currentState || {}),
+        blocked: Boolean(response?.blocked),
+        blockedByYou: Boolean(response?.blocked),
+      }));
+      setIsFollowing(false);
+
+      if (response?.blocked) {
+        setLists([]);
+        setReviews([]);
+        Alert.alert(
+          "User blocked",
+          "You will no longer see this user's profile, reviews, or lists in your feeds."
+        );
+        if (navigation.canGoBack()) {
+          navigation.goBack();
+        }
+      } else {
+        Alert.alert("User unblocked", "You can interact with this profile again.");
+        await refreshProfileUser();
+      }
+    } catch (error) {
+      console.error("Block toggle error:", error);
+      Alert.alert(
+        blockedByYou ? "Could not unblock user" : "Could not block user",
+        "Please try again in a moment."
+      );
+    } finally {
+      setBlockSubmitting(false);
+    }
+  };
+
+  const handleBlockToggle = () => {
+    setSafetySheetVisible(false);
+
+    if (!currentUid) {
+      Alert.alert("Sign in required", "Please sign in to manage blocked users.");
+      return;
+    }
+
+    if (!profileUserIdentifier || isOwnProfile) {
+      return;
+    }
+
+    Alert.alert(
+      blockedByYou ? "Unblock user?" : "Block user?",
+      blockedByYou
+        ? "This user will be able to appear in your feeds again."
+        : "You will stop seeing this user's profile, reviews, and lists.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: blockedByYou ? "Unblock" : "Block",
+          style: blockedByYou ? "default" : "destructive",
+          onPress: () => {
+            executeBlockToggle();
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <SafeAreaView style={{ flex: 1 }}>
+      <UserSafetySheet
+        visible={safetySheetVisible}
+        profileUsername={profileUsername}
+        blocked={blockedByYou}
+        blockSubmitting={blockSubmitting}
+        onClose={() => {
+          if (!blockSubmitting) {
+            setSafetySheetVisible(false);
+          }
+        }}
+        onReport={handleOpenReport}
+        onToggleBlock={handleBlockToggle}
+      />
+      <ReportContentModal
+        visible={reportVisible}
+        title="Report Profile"
+        targetLabel={`@${profileUsername || "this user"}`}
+        onClose={() => {
+          if (!reportSubmitting) {
+            setReportVisible(false);
+          }
+        }}
+        onSubmit={handleSubmitReport}
+        submitting={reportSubmitting}
+      />
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
         {/* --- Top Profile Section --- */}
         <View style={styles.profileHeader}>
@@ -273,8 +511,14 @@ const UserPage = () => {
             style={styles.profileImage}
           />
           <View style={styles.profileInfo}>
-            <Text style={styles.nameText}>{profileDisplayName}</Text>
-            <Text style={styles.usernameText}>@{profileUsername}</Text>
+            <Text style={styles.nameText} numberOfLines={2}>
+              {profileDisplayName}
+            </Text>
+            {profileSecondaryLabel ? (
+              <Text style={styles.usernameText} numberOfLines={1}>
+                {profileSecondaryLabel}
+              </Text>
+            ) : null}
           </View>
           {/* --- Follow Button --- */}
           {!isOwnProfile && (
@@ -305,6 +549,12 @@ const UserPage = () => {
           )}
         </View>
         {followError ? <Text style={styles.followErrorText}>{followError}</Text> : null}
+
+        {blockedByUser && !blockedByYou ? (
+          <Text style={styles.blockNoticeText}>
+            This user has blocked you. Follow and profile actions are limited.
+          </Text>
+        ) : null}
 
         {/* --- Stats Section --- */}
         <View style={styles.statsRow}>
@@ -449,14 +699,20 @@ const styles = StyleSheet.create({
   },
   profileInfo: {
     marginLeft: 16,
+    marginRight: 12,
+    flex: 1,
+    minWidth: 0,
   },
   nameText: {
     fontSize: 22,
     fontWeight: "bold",
+    color: "#111827",
+    flexShrink: 1,
   },
   usernameText: {
     fontSize: 16,
     color: "gray",
+    marginTop: 4,
   },
   statsRow: {
     flexDirection: "row",
@@ -514,13 +770,15 @@ const styles = StyleSheet.create({
   },
   followButton: {
     paddingVertical: 8,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     borderRadius: 24,
     borderWidth: 1,
     borderColor: "black",
-    alignSelf: "flex-start",
-    marginLeft: 30,
-    marginTop: 15,
+    marginLeft: 12,
+    minWidth: 96,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
   },
   followingButton: {
     backgroundColor: "black",
@@ -539,6 +797,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginTop: -8,
     marginBottom: 8,
+  },
+  headerActionButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 6,
+  },
+  blockNoticeText: {
+    paddingHorizontal: 16,
+    marginBottom: 8,
+    fontSize: 13,
+    lineHeight: 18,
+    color: "#6b7280",
   },
 });
 

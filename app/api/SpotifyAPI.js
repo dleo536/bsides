@@ -1,4 +1,5 @@
 import API_BASE_URL from "../config/api";
+import { apiFetch } from "./apiClient";
 
 const albumCache = new Map();
 const artistCache = new Map();
@@ -58,13 +59,17 @@ const buildRequestUrl = (path, query = {}) => {
 };
 
 const spotifyRequest = async (path, query = {}, label = path) => {
-  const response = await fetch(buildRequestUrl(path, query), {
-    method: "GET",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
+  const response = await apiFetch(
+    buildRequestUrl(path, query),
+    {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
     },
-  });
+    { authRequired: true }
+  );
 
   const data = await parseJsonSafely(response, label);
 

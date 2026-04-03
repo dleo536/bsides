@@ -18,7 +18,6 @@ import {
   getArtistById,
   getArtistByName,
 } from "../api/SpotifyAPI";
-import { getDiscogsArtistImage } from "../api/Discogs";
 import { getArtistDescriptionFromMusicBrainz } from "../api/MusicBrainz";
 
 const BIO_COLLAPSE_LENGTH = 320;
@@ -234,14 +233,11 @@ export default function ArtistPage() {
       const artistName = resolvedArtist?.name || initialArtist?.name || "";
       const artistId = resolvedArtist?.id || initialArtist?.id || "";
 
-      const [albumsResult, bioResult, fallbackImageResult] = await Promise.allSettled([
+      const [albumsResult, bioResult] = await Promise.allSettled([
         artistId ? getAlbumsByArtist(artistId) : Promise.resolve([]),
         artistName
           ? getArtistDescriptionFromMusicBrainz(artistName)
           : Promise.resolve({ description: "", source: null }),
-        !spotifyImageUri && artistName
-          ? getDiscogsArtistImage(artistName)
-          : Promise.resolve(spotifyImageUri || null),
       ]);
 
       if (!isMounted) {
@@ -264,11 +260,7 @@ export default function ArtistPage() {
       }
       setBioLoading(false);
 
-      if (fallbackImageResult.status === "fulfilled") {
-        setArtistImageUri(fallbackImageResult.value || spotifyImageUri || null);
-      } else {
-        setArtistImageUri(spotifyImageUri || null);
-      }
+      setArtistImageUri(spotifyImageUri || null);
 
       setPageLoading(false);
     };

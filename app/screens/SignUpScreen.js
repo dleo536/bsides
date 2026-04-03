@@ -109,7 +109,6 @@ export default function SignUpScreen() {
   });
 
   const usernameRequestRef = useRef(0);
-  const emailRequestRef = useRef(0);
 
   const passwordRules = getPasswordRules(password);
   const isPasswordValid = passwordRules.every((rule) => rule.met);
@@ -186,52 +185,16 @@ export default function SignUpScreen() {
       return;
     }
 
-    if (validateEmail(normalizedEmail)) {
+    const nextEmailError = validateEmail(normalizedEmail);
+    if (nextEmailError) {
       setEmailAvailability({ status: "idle", message: "" });
       return;
     }
 
-    const requestId = emailRequestRef.current + 1;
-    emailRequestRef.current = requestId;
     setEmailAvailability({
-      status: "checking",
-      message: "Checking email...",
+      status: "available",
+      message: "We'll verify this email during account creation.",
     });
-
-    const timeoutId = setTimeout(async () => {
-      try {
-        const availability = await getSignupAvailability({
-          email: normalizedEmail,
-        });
-
-        if (emailRequestRef.current !== requestId) {
-          return;
-        }
-
-        if (availability?.emailAvailable) {
-          setEmailAvailability({
-            status: "available",
-            message: "Email is available.",
-          });
-        } else {
-          setEmailAvailability({
-            status: "taken",
-            message: "That email is already in use.",
-          });
-        }
-      } catch (error) {
-        if (emailRequestRef.current !== requestId) {
-          return;
-        }
-
-        setEmailAvailability({
-          status: "error",
-          message: "Could not verify email right now.",
-        });
-      }
-    }, 350);
-
-    return () => clearTimeout(timeoutId);
   }, [normalizedEmail]);
 
   const setFieldTouched = (field) => {
@@ -350,7 +313,6 @@ export default function SignUpScreen() {
     try {
       const availability = await getSignupAvailability({
         username: normalizedUsername,
-        email: normalizedEmail,
       });
 
       if (!availability?.usernameAvailable) {
@@ -358,16 +320,6 @@ export default function SignUpScreen() {
         setUsernameAvailability({
           status: "taken",
           message: "That username is already taken.",
-        });
-        setIsSubmitting(false);
-        return;
-      }
-
-      if (!availability?.emailAvailable) {
-        setEmailError("That email is already in use.");
-        setEmailAvailability({
-          status: "taken",
-          message: "That email is already in use.",
         });
         setIsSubmitting(false);
         return;
@@ -388,8 +340,6 @@ export default function SignUpScreen() {
         await createBackendUserProfile({
           email: normalizedEmail,
           username: normalizedUsername,
-          firstName: normalizedUsername,
-          lastName: "user",
         });
       } catch (backendError) {
         try {

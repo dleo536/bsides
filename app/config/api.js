@@ -1,36 +1,62 @@
+import {
+  REACT_NATIVE_API_TARGET,
+  REACT_NATIVE_API_URL,
+  REACT_NATIVE_LOCAL_API_URL,
+  REACT_NATIVE_STAGING_API_URL,
+  REACT_NATIVE_PRODUCTION_API_URL,
+} from "@env";
+
 /**
  * API Configuration
- * 
- * This file exports the API base URL based on environment variables.
- * 
- * To use localhost:
- * - Create a .env file in the root directory with:
- *   REACT_NATIVE_API_URL=http://localhost:PORT
- *   (Replace PORT with your local backend port, e.g., 3000, 8000, etc.)
- * 
- * To use production:
- * - Create a .env file with:
- *   REACT_NATIVE_API_URL=https://test1.bsidesdatapath.xyz
- * - Or leave REACT_NATIVE_API_URL unset to use the default production URL
- * 
- * Note: After installing react-native-dotenv, restart your Expo dev server
- * for environment variable changes to take effect.
+ *
+ * Supported modes:
+ * - REACT_NATIVE_API_TARGET=local
+ * - REACT_NATIVE_API_TARGET=staging
+ * - REACT_NATIVE_API_TARGET=production
+ *
+ * Optional direct override:
+ * - REACT_NATIVE_API_URL=https://example.com
+ *
+ * Notes:
+ * - For iOS Simulator/Android Emulator, localhost can point to your machine.
+ * - For a physical device, use your machine's LAN IP instead of localhost.
+ * - Restart Expo after changing env vars.
  */
 
-// Try to import from @env (react-native-dotenv), fallback to default
-// let API_BASE_URL = 'https://test1.bsidesdatapath.xyz';
-let API_BASE_URL = 'http://localhost:3000';
+const DEFAULT_API_TARGET = 'local';
+const DEFAULT_API_URLS = {
+  local: 'http://localhost:3000',
+  staging: 'https://b-backend-50184648070.us-central1.run.app',
+  production: 'https://b-backend-50184648070.us-central1.run.app',
+};
 
-try {
-  // This will work after installing react-native-dotenv
-  const env = require('@env');
-  if (env.REACT_NATIVE_API_URL) {
-    API_BASE_URL = env.REACT_NATIVE_API_URL;
+const normalizeApiTarget = (value) => {
+  const normalizedValue = value?.trim().toLowerCase();
+
+  if (normalizedValue === 'local' || normalizedValue === 'staging' || normalizedValue === 'production') {
+    return normalizedValue;
   }
-} catch (error) {
-  // If @env is not available, use default
-  // You can also manually set the URL here for quick testing:
-  // API_BASE_URL = 'http://localhost:3000';
-}
 
+  return DEFAULT_API_TARGET;
+};
+
+const normalizeApiUrl = (value) => value?.trim().replace(/\/+$/, '');
+const API_TARGET = normalizeApiTarget(REACT_NATIVE_API_TARGET);
+const overrideApiUrl = normalizeApiUrl(REACT_NATIVE_API_URL);
+const targetApiUrl = normalizeApiUrl(
+  API_TARGET === 'local'
+    ? REACT_NATIVE_LOCAL_API_URL
+    : API_TARGET === 'staging'
+      ? REACT_NATIVE_STAGING_API_URL
+      : REACT_NATIVE_PRODUCTION_API_URL,
+);
+
+const API_BASE_URL = overrideApiUrl || targetApiUrl || DEFAULT_API_URLS[API_TARGET];
+
+console.log("[API Config]", {
+  target: API_TARGET,
+  baseUrl: API_BASE_URL,
+});
+
+export { API_TARGET };
 export default API_BASE_URL;

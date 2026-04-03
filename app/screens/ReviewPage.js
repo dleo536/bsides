@@ -12,12 +12,14 @@ import {
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import ReportContentModal from "../components/ReportContentModal";
 import {
   getAlbum,
   getAlbumsByName,
   getArtistById,
   getArtistByName,
 } from "../api/SpotifyAPI";
+import { submitContentReport } from "../api/ModerationAPI";
 import { getUserByIdentifier } from "../api/UserAPI";
 import { formatReviewScore } from "../logic/Review";
 
@@ -171,6 +173,8 @@ export default function ReviewPage() {
   const [albumActionLoading, setAlbumActionLoading] = useState(false);
   const [artistActionLoading, setArtistActionLoading] = useState(false);
   const [userActionLoading, setUserActionLoading] = useState(false);
+  const [reportVisible, setReportVisible] = useState(false);
+  const [reportSubmitting, setReportSubmitting] = useState(false);
 
   useEffect(() => {
     setReviewData(incomingReview);
@@ -364,8 +368,45 @@ export default function ReviewPage() {
     }
   };
 
+  const handleSubmitReport = async ({ reason, details }) => {
+    if (!reviewData?.id) {
+      Alert.alert("Review unavailable", "We could not resolve this review for reporting.");
+      return;
+    }
+
+    setReportSubmitting(true);
+
+    try {
+      await submitContentReport({
+        targetType: "review",
+        targetId: reviewData.id,
+        reason,
+        details,
+      });
+      setReportVisible(false);
+      Alert.alert("Report received", "Thanks. We will review this review.");
+    } catch (error) {
+      console.error("Review report error:", error);
+      Alert.alert("Could not report review", "Please try again in a moment.");
+    } finally {
+      setReportSubmitting(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
+      <ReportContentModal
+        visible={reportVisible}
+        title="Report Review"
+        targetLabel={reviewTitle}
+        onClose={() => {
+          if (!reportSubmitting) {
+            setReportVisible(false);
+          }
+        }}
+        onSubmit={handleSubmitReport}
+        submitting={reportSubmitting}
+      />
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <TouchableOpacity
@@ -445,6 +486,20 @@ export default function ReviewPage() {
                 <Ionicons name="person-circle-outline" size={20} color="#111827" />
               )}
               <Text style={styles.actionButtonText}>User</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.88}
+              disabled={reportSubmitting || !reviewData?.id}
+              onPress={() => setReportVisible(true)}
+              style={[styles.actionButton, (reportSubmitting || !reviewData?.id) && styles.actionButtonDisabled]}
+            >
+              {reportSubmitting ? (
+                <ActivityIndicator size="small" color="#111827" />
+              ) : (
+                <Ionicons name="flag-outline" size={20} color="#111827" />
+              )}
+              <Text style={styles.actionButtonText}>Report</Text>
             </TouchableOpacity>
           </View>
         </View>

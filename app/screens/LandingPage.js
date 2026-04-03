@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Image,
   SafeAreaView,
@@ -8,19 +8,32 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import { useEvent } from "expo";
 import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
+import { useVideoPlayer, VideoView } from "expo-video";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { auth } from "../config/firebase";
-
-import heroImage from "../../assets/ChatGPT Image Apr 2, 2025, 09_32_29 PM.png";
+import heroFallbackImage from "../../assets/ChatGPT Image Apr 2, 2025, 09_32_29 PM.png";
 import logoImage from "../../assets/Color logo - no background.png";
+
+const heroVideo = require("../../assets/landing-bg.mp4");
 
 export default function LandingPage() {
   const navigation = useNavigation();
-  const { height } = useWindowDimensions();
-  const heroImageHeight = Math.max(150, Math.min(220, Math.round(height * 0.24)));
+  const { height, width } = useWindowDimensions();
+  const heroMediaSize = Math.min(width - 60, Math.max(220, Math.min(330, Math.round(height * 0.34))));
+  const [didRenderFirstFrame, setDidRenderFirstFrame] = useState(false);
+  const player = useVideoPlayer(heroVideo, (videoPlayer) => {
+    videoPlayer.loop = true;
+    videoPlayer.muted = true;
+    videoPlayer.play();
+  });
+  const { status, error } = useEvent(player, "statusChange", {
+    status: player.status,
+    error: undefined,
+  });
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((user) => {
@@ -31,6 +44,18 @@ export default function LandingPage() {
 
     return unsubscribe;
   }, [navigation]);
+
+  useEffect(() => {
+    if (error) {
+      console.warn("[Landing video error]", error);
+    }
+  }, [error]);
+
+  useEffect(() => {
+    if (status === "readyToPlay") {
+      setDidRenderFirstFrame(true);
+    }
+  }, [status]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -54,11 +79,41 @@ export default function LandingPage() {
             end={{ x: 1, y: 1 }}
             style={styles.heroCard}
           >
-            <Image
-              source={heroImage}
-              style={[styles.heroImage, { height: heroImageHeight }]}
-              resizeMode="cover"
-            />
+            <View style={[styles.heroMediaShell, { width: heroMediaSize, height: heroMediaSize }]}>
+              {!didRenderFirstFrame ? (
+                <Image
+                  source={heroFallbackImage}
+                  style={[StyleSheet.absoluteFill, styles.heroFallbackImage]}
+                  resizeMode="contain"
+                />
+              ) : null}
+              <VideoView
+                player={player}
+                style={StyleSheet.absoluteFill}
+                nativeControls={false}
+                contentFit="contain"
+                allowsFullscreen={false}
+                allowsPictureInPicture={false}
+                onFirstFrameRender={() => setDidRenderFirstFrame(true)}
+              />
+              <LinearGradient
+                colors={["rgba(255, 247, 210, 0.16)", "rgba(17, 24, 39, 0.12)", "rgba(17, 24, 39, 0.62)"]}
+                locations={[0, 0.45, 1]}
+                style={styles.heroMediaOverlay}
+              >
+                <View style={styles.heroMediaBadge}>
+                  <View style={styles.heroMediaPulse} />
+                  <Text style={styles.heroMediaBadgeText}>Always on repeat</Text>
+                </View>
+
+                <View style={styles.heroMediaCopy}>
+                  <Text style={styles.heroMediaTitle}>Your listening life, in motion.</Text>
+                  <Text style={styles.heroMediaBody}>
+                    Build lists, drop reviews, and shape a profile that feels alive.
+                  </Text>
+                </View>
+              </LinearGradient>
+            </View>
           </LinearGradient>
         </View>
 
@@ -155,10 +210,59 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     elevation: 4,
   },
-  heroImage: {
-    width: "100%",
+  heroMediaShell: {
+    alignSelf: "center",
     borderRadius: 22,
-    backgroundColor: "#ffffff",
+    backgroundColor: "#d8d7d2",
+    overflow: "hidden",
+  },
+  heroFallbackImage: {
+    opacity: 1,
+  },
+  heroMediaOverlay: {
+    flex: 1,
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  heroMediaBadge: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.82)",
+    borderRadius: 999,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+  },
+  heroMediaPulse: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#f59e0b",
+  },
+  heroMediaBadgeText: {
+    color: "#6b4b00",
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+  heroMediaCopy: {
+    gap: 6,
+  },
+  heroMediaTitle: {
+    color: "#ffffff",
+    fontSize: 24,
+    lineHeight: 28,
+    fontWeight: "800",
+    maxWidth: 220,
+  },
+  heroMediaBody: {
+    color: "rgba(255, 255, 255, 0.88)",
+    fontSize: 13,
+    lineHeight: 19,
+    maxWidth: 260,
   },
   actionsCard: {
     backgroundColor: "#ffffff",

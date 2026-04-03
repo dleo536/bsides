@@ -1,5 +1,6 @@
 import React from "react";
 import {
+  ActivityIndicator,
   Modal,
   Pressable,
   StyleSheet,
@@ -9,16 +10,15 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-const ListOptionsSheet = ({
+export default function UserSafetySheet({
   visible,
-  listTitle,
-  itemCount = 0,
+  profileUsername,
+  blocked = false,
+  blockSubmitting = false,
   onClose,
-  onEditList,
-  onReportList,
-  canEditList = false,
-  canReportList = false,
-}) => {
+  onReport,
+  onToggleBlock,
+}) {
   return (
     <Modal
       visible={visible}
@@ -30,32 +30,35 @@ const ListOptionsSheet = ({
         <Pressable style={styles.backdropPressable} onPress={onClose} />
         <View style={styles.sheetStack}>
           <View style={styles.sheetCard}>
-            <Text style={styles.sheetTitle} numberOfLines={1}>
-              {listTitle || "Your List"}
+            <Text style={styles.sheetTitle}>
+              {profileUsername ? `@${profileUsername}` : "Profile options"}
             </Text>
             <Text style={styles.sheetSubtitle}>
-              {itemCount} album{itemCount === 1 ? "" : "s"}
+              Manage safety actions for this profile.
             </Text>
 
-            {canEditList ? (
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={onEditList}
-                style={styles.actionRow}
-              >
-                <Text style={styles.actionText}>Edit List</Text>
-              </TouchableOpacity>
-            ) : null}
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={onReport}
+              style={styles.actionRow}
+            >
+              <Text style={styles.actionText}>Report Profile</Text>
+            </TouchableOpacity>
 
-            {canReportList ? (
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={onReportList}
-                style={styles.actionRow}
-              >
-                <Text style={styles.actionText}>Report List</Text>
-              </TouchableOpacity>
-            ) : null}
+            <TouchableOpacity
+              activeOpacity={0.85}
+              disabled={blockSubmitting}
+              onPress={onToggleBlock}
+              style={[styles.actionRow, styles.destructiveRow]}
+            >
+              {blockSubmitting ? (
+                <ActivityIndicator size="small" color="#b91c1c" />
+              ) : (
+                <Text style={[styles.actionText, styles.destructiveText]}>
+                  {blocked ? "Unblock User" : "Block User"}
+                </Text>
+              )}
+            </TouchableOpacity>
           </View>
 
           <TouchableOpacity
@@ -69,7 +72,7 @@ const ListOptionsSheet = ({
       </SafeAreaView>
     </Modal>
   );
-};
+}
 
 const styles = StyleSheet.create({
   backdrop: {
@@ -86,8 +89,8 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   sheetCard: {
-    borderRadius: 18,
-    backgroundColor: "#5a6f86",
+    borderRadius: 20,
+    backgroundColor: "#ffffff",
     overflow: "hidden",
   },
   sheetTitle: {
@@ -95,30 +98,39 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 18,
     fontWeight: "700",
-    color: "#f8fafc",
+    color: "#111827",
   },
   sheetSubtitle: {
     paddingTop: 4,
     paddingBottom: 14,
+    paddingHorizontal: 24,
     textAlign: "center",
     fontSize: 14,
-    color: "#dbe4ef",
+    lineHeight: 20,
+    color: "#6b7280",
   },
   actionRow: {
-    paddingVertical: 16,
+    minHeight: 54,
+    paddingHorizontal: 18,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "rgba(226, 232, 240, 0.22)",
+    borderTopColor: "rgba(148, 163, 184, 0.32)",
     alignItems: "center",
     justifyContent: "center",
+  },
+  destructiveRow: {
+    backgroundColor: "#fff5f5",
   },
   actionText: {
     fontSize: 17,
     fontWeight: "600",
-    color: "#f8fafc",
+    color: "#111827",
+  },
+  destructiveText: {
+    color: "#b91c1c",
   },
   doneButton: {
     borderRadius: 18,
-    backgroundColor: "#5a6f86",
+    backgroundColor: "#ffffff",
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 16,
@@ -126,8 +138,6 @@ const styles = StyleSheet.create({
   doneText: {
     fontSize: 17,
     fontWeight: "700",
-    color: "#f8fafc",
+    color: "#111827",
   },
 });
-
-export default ListOptionsSheet;

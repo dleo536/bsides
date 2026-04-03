@@ -26,7 +26,6 @@ import { Review } from "../logic/Review";
 import { getListByUID, patchAlbumList } from "../api/ListAPI";
 import { List } from "../logic/List";
 import { getAlbumsMixedBy } from "../api/MusicBrainz";
-import { getMusicianMixedCredits } from "../api/Discogs";
 import { getAlbumList } from "../api/SpotifyAPI";
 const AlbumPage = (route) => {
   const windowWidth = Dimensions.get("window").width;
@@ -50,24 +49,24 @@ const AlbumPage = (route) => {
 
   useEffect(() => {
     const fetchAlbums = async () => {
-      const albums = await getMusicianMixedCredits(musicianData.artist.name);
-      const uniqueAlbums = getUniqueAlbumsByTitle(albums);
-      const albumsProcessed = await albumProcessing(uniqueAlbums);
+      const mixedAlbumTitles = await getAlbumsMixedBy(musicianData.artist.name);
+      const uniqueAlbumTitles = getUniqueAlbumTitles(mixedAlbumTitles);
+      const albumsProcessed = await albumProcessing(uniqueAlbumTitles);
 
       setAlbums(albumsProcessed);
     };
     fetchAlbums();
-  }, []);
-  async function albumProcessing(albums) {
+  }, [musicianData.artist.name]);
+  async function albumProcessing(albumTitles) {
     const albumsProcessed = await Promise.all(
-      albums.map(async (album) => {
-        const albumData = await getAlbumsByName(album.title);
+      albumTitles.map(async (albumTitle) => {
+        const albumData = await getAlbumsByName(albumTitle);
 
-        return albumData[0];
+        return albumData[0] || null;
       })
     );
 
-    return albumsProcessed;
+    return albumsProcessed.filter(Boolean);
   }
   const formatDate = (dateString) => {
     const date = new Date(dateString);
@@ -77,24 +76,34 @@ const AlbumPage = (route) => {
       day: "numeric",
     });
   };
-  function getUniqueAlbumsByTitle(albums) {
+  function getUniqueAlbumTitles(albumTitles) {
     try {
-      const results = albums || [];
+      const results = Array.isArray(albumTitles) ? albumTitles : [];
 
-      // Deduplicate based on title
       const seenTitles = new Set();
-      const uniqueAlbums = [];
+      const uniqueTitles = [];
 
-      for (const album of results) {
-        if (!seenTitles.has(album.title)) {
-          seenTitles.add(album.title);
-          uniqueAlbums.push(album);
+      for (const title of results) {
+        if (typeof title !== "string") {
+          continue;
+        }
+
+        const normalizedTitle = title.trim();
+        if (!normalizedTitle) {
+          continue;
+        }
+
+        const titleKey = normalizedTitle.toLowerCase();
+        if (!seenTitles.has(titleKey)) {
+          seenTitles.add(titleKey);
+          uniqueTitles.push(normalizedTitle);
         }
       }
 
-      return uniqueAlbums;
+      return uniqueTitles;
     } catch (error) {
       console.error("Error fetching or processing data:", error);
+      return [];
     }
   }
 

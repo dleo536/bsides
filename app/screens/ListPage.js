@@ -22,9 +22,11 @@ import {
   updateListAlbumOrder,
   unlikeList,
 } from "../api/ListAPI";
+import { submitContentReport } from "../api/ModerationAPI";
 import { getFullUserByUid, getUsernameByUID } from "../api/UserAPI";
 import ListEditModal from "../components/ListEditModal";
 import ListOptionsSheet from "../components/ListOptionsSheet";
+import ReportContentModal from "../components/ReportContentModal";
 
 const windowWidth = Dimensions.get("window").width;
 const GRID_GAP = 10;
@@ -62,6 +64,8 @@ export default function ListPage() {
   const [editVisible, setEditVisible] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState("");
+  const [reportVisible, setReportVisible] = useState(false);
+  const [reportSubmitting, setReportSubmitting] = useState(false);
 
   const currentUid = auth?.currentUser?.uid || null;
   const listId = route.params?.listId || listData?.id || initialList?.id || null;
@@ -335,6 +339,34 @@ export default function ListPage() {
     [editSaving, listId, refreshListData]
   );
 
+  const handleSubmitReport = useCallback(
+    async ({ reason, details }) => {
+      if (!listData?.id) {
+        Alert.alert("List unavailable", "We could not resolve this list for reporting.");
+        return;
+      }
+
+      setReportSubmitting(true);
+
+      try {
+        await submitContentReport({
+          targetType: "list",
+          targetId: listData.id,
+          reason,
+          details,
+        });
+        setReportVisible(false);
+        Alert.alert("Report received", "Thanks. We will review this list.");
+      } catch (error) {
+        console.error("List report error:", error);
+        Alert.alert("Could not report list", "Please try again in a moment.");
+      } finally {
+        setReportSubmitting(false);
+      }
+    },
+    [listData?.id]
+  );
+
   if (!listData) {
     return (
       <SafeAreaView style={styles.screen}>
@@ -353,6 +385,24 @@ export default function ListPage() {
         itemCount={albumEntries.length || albumIds.length}
         onClose={() => setOptionsVisible(false)}
         onEditList={handleOpenEdit}
+        onReportList={() => {
+          setOptionsVisible(false);
+          setReportVisible(true);
+        }}
+        canEditList={isOwner}
+        canReportList={!isOwner}
+      />
+      <ReportContentModal
+        visible={reportVisible}
+        title="Report List"
+        targetLabel={listData?.listName || "this list"}
+        onClose={() => {
+          if (!reportSubmitting) {
+            setReportVisible(false);
+          }
+        }}
+        onSubmit={handleSubmitReport}
+        submitting={reportSubmitting}
       />
       <ListEditModal
         visible={editVisible}
@@ -389,19 +439,17 @@ export default function ListPage() {
             {creatorName ? <Text style={styles.creator}>By @{creatorName}</Text> : null}
           </View>
           <View style={styles.headerActions}>
-            {isOwner ? (
-              <TouchableOpacity
-                onPress={() => setOptionsVisible(true)}
-                style={styles.optionsButton}
-                activeOpacity={0.82}
-              >
-                <Ionicons
-                  name="ellipsis-horizontal-outline"
-                  size={20}
-                  color="#111827"
-                />
-              </TouchableOpacity>
-            ) : null}
+            <TouchableOpacity
+              onPress={() => setOptionsVisible(true)}
+              style={styles.optionsButton}
+              activeOpacity={0.82}
+            >
+              <Ionicons
+                name="ellipsis-horizontal-outline"
+                size={20}
+                color="#111827"
+              />
+            </TouchableOpacity>
             <TouchableOpacity
               onPress={handleLikePress}
               style={styles.likeButton}

@@ -14,18 +14,26 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { signOut, onAuthStateChanged } from "firebase/auth";
+import {
+  EmailAuthProvider,
+  onAuthStateChanged,
+  reauthenticateWithCredential,
+  signOut,
+} from "firebase/auth";
+import { deleteObject, ref } from "firebase/storage";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
 import { createMaterialTopTabNavigator } from "@react-navigation/material-top-tabs";
 import defaultProfileImage from "../../assets/defaultProfilePicture.png";
-import { auth } from "../config/firebase";
+import { auth, storage } from "../config/firebase";
+import { getProfileIdentity } from "../logic/profileIdentity";
 import { formatReviewScore } from "../logic/Review";
 import { getListByUID, getMyLikedLists, postList } from "../api/ListAPI";
 import { getReviewsByUID } from "../api/ReviewAPI";
 import { getAlbum } from "../api/SpotifyAPI";
+import { deleteCurrentUserAccount } from "../api/UserAPI";
 import ListElement from "../components/listElement";
 
 const Tab = createMaterialTopTabNavigator();
@@ -104,27 +112,125 @@ const formatHistoryDate = (value) => {
   });
 };
 
-const ProfileActionSheet = ({ visible, onClose, onSignOut, user }) => (
+const ProfileActionSheet = ({
+  visible,
+  onClose,
+  onDeleteAccount,
+  onSignOut,
+  user,
+}) => {
+  const profileIdentity = getProfileIdentity(user || {});
+
+  return (
+    <Modal
+      animationType="fade"
+      transparent
+      visible={visible}
+      onRequestClose={onClose}
+    >
+      <View style={styles.sheetRoot}>
+        <Pressable style={styles.sheetBackdrop} onPress={onClose} />
+        <View style={styles.sheetContainer}>
+          <View style={styles.sheetHandle} />
+          <Text style={styles.sheetTitle}>Profile actions</Text>
+          <Text style={styles.sheetSubtitle}>
+            {user?.email || profileIdentity.handle || profileIdentity.title || "Manage your account"}
+          </Text>
+          <Pressable style={styles.sheetSecondaryActionButton} onPress={onSignOut}>
+            <Ionicons name="log-out-outline" size={20} color="#111827" />
+            <Text style={styles.sheetSecondaryActionText}>Sign out</Text>
+          </Pressable>
+          <Pressable style={styles.sheetActionButton} onPress={onDeleteAccount}>
+            <Ionicons name="trash-outline" size={20} color="#9f1239" />
+            <Text style={styles.sheetActionText}>Delete account</Text>
+          </Pressable>
+          <Pressable style={styles.sheetCancelButton} onPress={onClose}>
+            <Text style={styles.sheetCancelText}>Close</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
+const DeleteAccountModal = ({
+  errorMessage,
+  isSubmitting,
+  onClose,
+  onConfirm,
+  onPasswordChange,
+  password,
+  user,
+  visible,
+}) => (
   <Modal
     animationType="fade"
     transparent
     visible={visible}
     onRequestClose={onClose}
   >
-    <View style={styles.sheetRoot}>
-      <Pressable style={styles.sheetBackdrop} onPress={onClose} />
-      <View style={styles.sheetContainer}>
-        <View style={styles.sheetHandle} />
-        <Text style={styles.sheetTitle}>Profile actions</Text>
-        <Text style={styles.sheetSubtitle}>
-          {user?.email || user?.displayName || "Manage your account"}
+    <View style={styles.modalBackdrop}>
+      <View style={styles.deleteModalView}>
+        <View style={styles.deleteModalWarningPill}>
+          <Ionicons name="warning-outline" size={16} color="#b91c1c" />
+          <Text style={styles.deleteModalWarningText}>Permanent action</Text>
+        </View>
+        <Text style={styles.deleteModalTitle}>Delete your account?</Text>
+        <Text style={styles.deleteModalBody}>
+          This permanently deletes your profile, lists, reviews, profile photo,
+          and sign-in access. This action cannot be undone.
         </Text>
-        <Pressable style={styles.sheetActionButton} onPress={onSignOut}>
-          <Ionicons name="log-out-outline" size={20} color="#9f1239" />
-          <Text style={styles.sheetActionText}>Sign out</Text>
+        <Text style={styles.deleteModalHint}>
+          Confirm with the password for {user?.email || "your account"}.
+        </Text>
+        <TextInput
+          autoCapitalize="none"
+          autoCorrect={false}
+          editable={!isSubmitting}
+          onChangeText={onPasswordChange}
+          placeholder="Current password"
+          placeholderTextColor="#9ca3af"
+          secureTextEntry
+          style={styles.deleteModalInput}
+          textContentType="password"
+          value={password}
+        />
+
+        {errorMessage ? (
+          <View style={styles.deleteModalErrorBanner}>
+            <Ionicons name="alert-circle" size={18} color="#b91c1c" />
+            <Text style={styles.deleteModalErrorText}>{errorMessage}</Text>
+          </View>
+        ) : null}
+
+        <Pressable
+          disabled={isSubmitting}
+          onPress={onConfirm}
+          style={[
+            styles.modalButton,
+            styles.deleteModalPrimaryButton,
+            isSubmitting && styles.modalButtonDisabled,
+          ]}
+        >
+          {isSubmitting ? (
+            <ActivityIndicator color="#ffffff" />
+          ) : (
+            <Text style={styles.deleteModalPrimaryButtonText}>
+              Delete account
+            </Text>
+          )}
         </Pressable>
-        <Pressable style={styles.sheetCancelButton} onPress={onClose}>
-          <Text style={styles.sheetCancelText}>Close</Text>
+
+        <Pressable
+          disabled={isSubmitting}
+          onPress={onClose}
+          style={[
+            styles.modalButton,
+            styles.deleteModalSecondaryButton,
+            isSubmitting && styles.modalButtonDisabled,
+          ]}
+        >
+          <Text style={styles.deleteModalSecondaryButtonText}>Cancel</Text>
         </Pressable>
       </View>
     </View>
@@ -345,6 +451,11 @@ const ProfileTab = () => {
   const [topAlbumsLoading, setTopAlbumsLoading] = useState(false);
   const [profileDataLoading, setProfileDataLoading] = useState(true);
   const [actionModalVisible, setActionModalVisible] = useState(false);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteAccountError, setDeleteAccountError] = useState("");
+  const [deleteAccountSubmitting, setDeleteAccountSubmitting] = useState(false);
+  const profileIdentity = getProfileIdentity(user || {});
 
   const favoritesList = useMemo(() => findFavoritesList(lists), [lists]);
   const favoriteCount = Array.isArray(favoritesList?.albumIds)
@@ -358,6 +469,12 @@ const ProfileTab = () => {
     () => formatJoinLabel(user?.metadata?.creationTime),
     [user?.metadata?.creationTime]
   );
+
+  const resetDeleteAccountState = useCallback(() => {
+    setDeletePassword("");
+    setDeleteAccountError("");
+    setDeleteAccountSubmitting(false);
+  }, []);
 
   const loadTopAlbums = useCallback(async (resolvedLists) => {
     const nextFavoritesList = findFavoritesList(resolvedLists);
@@ -447,7 +564,7 @@ const ProfileTab = () => {
       const parent = navigation.getParent();
 
       parent?.setOptions({
-        headerTitle: user?.displayName || "Profile",
+        headerTitle: profileIdentity.handle || profileIdentity.title || "Profile",
         headerRight: () => (
           <TouchableOpacity
             onPress={() => setActionModalVisible(true)}
@@ -464,8 +581,10 @@ const ProfileTab = () => {
 
       return () => {
         setActionModalVisible(false);
+        setDeleteModalVisible(false);
+        resetDeleteAccountState();
       };
-    }, [loadProfileData, navigation, user?.displayName])
+    }, [loadProfileData, navigation, profileIdentity.handle, profileIdentity.title, resetDeleteAccountState])
   );
 
   const handleSignOut = useCallback(() => {
@@ -478,6 +597,102 @@ const ProfileTab = () => {
         console.error("Error signing out:", error);
       });
   }, [navigation]);
+
+  const openDeleteAccountModal = useCallback(() => {
+    setActionModalVisible(false);
+    resetDeleteAccountState();
+    setDeleteModalVisible(true);
+  }, [resetDeleteAccountState]);
+
+  const closeDeleteAccountModal = useCallback(() => {
+    if (deleteAccountSubmitting) {
+      return;
+    }
+
+    setDeleteModalVisible(false);
+    resetDeleteAccountState();
+  }, [deleteAccountSubmitting, resetDeleteAccountState]);
+
+  const handleDeleteAccount = useCallback(async () => {
+    if (deleteAccountSubmitting) {
+      return;
+    }
+
+    const currentUser = auth.currentUser;
+    const normalizedPassword = deletePassword.trim();
+
+    if (!currentUser?.uid) {
+      setDeleteAccountError("Your session expired. Please sign in again.");
+      return;
+    }
+
+    if (!currentUser.email) {
+      setDeleteAccountError(
+        "We couldn't confirm your email address. Sign out and sign back in before deleting your account."
+      );
+      return;
+    }
+
+    if (!normalizedPassword) {
+      setDeleteAccountError("Enter your password to confirm account deletion.");
+      return;
+    }
+
+    setDeleteAccountSubmitting(true);
+    setDeleteAccountError("");
+
+    try {
+      const credential = EmailAuthProvider.credential(
+        currentUser.email,
+        normalizedPassword
+      );
+      await reauthenticateWithCredential(currentUser, credential);
+
+      try {
+        await deleteObject(ref(storage, `profileImages/${currentUser.uid}`));
+      } catch (storageError) {
+        console.warn("Profile image cleanup failed:", storageError);
+      }
+
+      await deleteCurrentUserAccount();
+
+      try {
+        await signOut(auth);
+      } catch (signOutError) {
+        console.warn("Local sign-out after account deletion failed:", signOutError);
+      }
+
+      setDeleteModalVisible(false);
+      resetDeleteAccountState();
+      navigation.replace("Landing");
+    } catch (error) {
+      const errorCode = error?.code || "";
+      const backendMessage = error?.payload?.message || error?.message || "";
+
+      if (
+        errorCode === "auth/invalid-credential" ||
+        errorCode === "auth/invalid-login-credentials" ||
+        errorCode === "auth/wrong-password"
+      ) {
+        setDeleteAccountError("The password you entered is incorrect.");
+      } else if (errorCode === "auth/too-many-requests") {
+        setDeleteAccountError("Too many attempts. Please wait a moment and try again.");
+      } else if (errorCode === "auth/network-request-failed") {
+        setDeleteAccountError("Could not reach the server. Check your connection and try again.");
+      } else if (typeof backendMessage === "string" && backendMessage.trim()) {
+        setDeleteAccountError(backendMessage.trim());
+      } else {
+        setDeleteAccountError("Could not delete your account right now. Please try again.");
+      }
+    } finally {
+      setDeleteAccountSubmitting(false);
+    }
+  }, [
+    deleteAccountSubmitting,
+    deletePassword,
+    navigation,
+    resetDeleteAccountState,
+  ]);
 
   const onRefresh = useCallback(async () => {
     if (!auth.currentUser) {
@@ -519,8 +734,24 @@ const ProfileTab = () => {
         <ProfileActionSheet
           visible={actionModalVisible}
           onClose={() => setActionModalVisible(false)}
+          onDeleteAccount={openDeleteAccountModal}
           onSignOut={handleSignOut}
           user={user}
+        />
+        <DeleteAccountModal
+          errorMessage={deleteAccountError}
+          isSubmitting={deleteAccountSubmitting}
+          onClose={closeDeleteAccountModal}
+          onConfirm={handleDeleteAccount}
+          onPasswordChange={(value) => {
+            setDeletePassword(value);
+            if (deleteAccountError) {
+              setDeleteAccountError("");
+            }
+          }}
+          password={deletePassword}
+          user={user}
+          visible={deleteModalVisible}
         />
         <ScrollView
           contentContainerStyle={styles.profileScrollContent}
@@ -540,7 +771,7 @@ const ProfileTab = () => {
                 style={styles.profileImage}
               />
               <Text style={styles.heroTitle}>
-                {user.displayName || "Make this profile yours"}
+                {profileIdentity.title || "Make this profile yours"}
               </Text>
               <View style={styles.metaRow}>
                 <View style={styles.metaChip}>
@@ -1287,6 +1518,20 @@ const styles = StyleSheet.create({
     marginBottom: 18,
     color: "#6b7280",
   },
+  sheetSecondaryActionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderRadius: 18,
+    backgroundColor: "#f3f4f6",
+  },
+  sheetSecondaryActionText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#111827",
+  },
   sheetActionButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -1295,6 +1540,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 18,
     backgroundColor: "#fff1f2",
+    marginTop: 10,
   },
   sheetActionText: {
     fontSize: 16,
@@ -1333,6 +1579,86 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 5,
   },
+  deleteModalView: {
+    width: "100%",
+    backgroundColor: "#ffffff",
+    borderRadius: 24,
+    padding: 24,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  deleteModalWarningPill: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#fef2f2",
+    borderWidth: 1,
+    borderColor: "#fecaca",
+  },
+  deleteModalWarningText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#b91c1c",
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+  deleteModalTitle: {
+    marginTop: 16,
+    fontSize: 24,
+    fontWeight: "800",
+    color: "#111827",
+  },
+  deleteModalBody: {
+    marginTop: 10,
+    fontSize: 14,
+    lineHeight: 21,
+    color: "#4b5563",
+  },
+  deleteModalHint: {
+    marginTop: 16,
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#374151",
+  },
+  deleteModalInput: {
+    width: "100%",
+    backgroundColor: "#f9fafb",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 14,
+    marginTop: 12,
+    color: "#111827",
+  },
+  deleteModalErrorBanner: {
+    marginTop: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderRadius: 16,
+    backgroundColor: "#fef2f2",
+    borderWidth: 1,
+    borderColor: "#fecaca",
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  deleteModalErrorText: {
+    flex: 1,
+    color: "#b91c1c",
+    fontSize: 13,
+    lineHeight: 18,
+  },
   modalText: {
     marginBottom: 8,
     fontSize: 18,
@@ -1356,6 +1682,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 14,
   },
+  modalButtonDisabled: {
+    opacity: 0.7,
+  },
   modalPrimaryButton: {
     backgroundColor: "#111827",
   },
@@ -1367,6 +1696,20 @@ const styles = StyleSheet.create({
     backgroundColor: "#f3f4f6",
   },
   modalSecondaryButtonText: {
+    color: "#111827",
+    fontWeight: "700",
+  },
+  deleteModalPrimaryButton: {
+    backgroundColor: "#b91c1c",
+  },
+  deleteModalPrimaryButtonText: {
+    color: "#ffffff",
+    fontWeight: "700",
+  },
+  deleteModalSecondaryButton: {
+    backgroundColor: "#f3f4f6",
+  },
+  deleteModalSecondaryButtonText: {
     color: "#111827",
     fontWeight: "700",
   },
