@@ -2,6 +2,7 @@
   "expo": {
     "name": "b.sides",
     "slug": "b-sides",
+    "scheme": "bsidespro",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -15,15 +16,16 @@
       "**/*"
     ],
     "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.bsides"
+      "supportsTablet": false,
+      "bundleIdentifier": "pro.bsides.app",
+      "buildNumber": "6"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.anonymous.bsides"
+      "package": "pro.bsides.app"
     },
     "web": {
       "favicon": "./assets/favicon.png"

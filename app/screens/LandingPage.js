@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import {
   Image,
-  SafeAreaView,
+  Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -14,16 +14,38 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth } from "../config/firebase";
 import heroFallbackImage from "../../assets/ChatGPT Image Apr 2, 2025, 09_32_29 PM.png";
 import logoImage from "../../assets/Color logo - no background.png";
+import LegalAccessLink from "../components/LegalAccessLink";
 
 const heroVideo = require("../../assets/landing-bg.mp4");
 
-export default function LandingPage() {
-  const navigation = useNavigation();
-  const { height, width } = useWindowDimensions();
-  const heroMediaSize = Math.min(width - 60, Math.max(220, Math.min(330, Math.round(height * 0.34))));
+function HeroMediaOverlay() {
+  return (
+    <LinearGradient
+      colors={["rgba(255, 247, 210, 0.16)", "rgba(17, 24, 39, 0.12)", "rgba(17, 24, 39, 0.62)"]}
+      locations={[0, 0.45, 1]}
+      style={styles.heroMediaOverlay}
+    />
+  );
+}
+
+function StaticHeroMedia() {
+  return (
+    <>
+      <Image
+        source={heroFallbackImage}
+        style={[StyleSheet.absoluteFill, styles.heroFallbackImage]}
+        resizeMode="contain"
+      />
+      <HeroMediaOverlay />
+    </>
+  );
+}
+
+function VideoHeroMedia() {
   const [didRenderFirstFrame, setDidRenderFirstFrame] = useState(false);
   const player = useVideoPlayer(heroVideo, (videoPlayer) => {
     videoPlayer.loop = true;
@@ -34,16 +56,6 @@ export default function LandingPage() {
     status: player.status,
     error: undefined,
   });
-
-  useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((user) => {
-      if (user) {
-        navigation.replace("Welcome");
-      }
-    });
-
-    return unsubscribe;
-  }, [navigation]);
 
   useEffect(() => {
     if (error) {
@@ -58,75 +70,158 @@ export default function LandingPage() {
   }, [status]);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <>
+      {!didRenderFirstFrame ? (
+        <Image
+          source={heroFallbackImage}
+          style={[StyleSheet.absoluteFill, styles.heroFallbackImage]}
+          resizeMode="contain"
+        />
+      ) : null}
+      <VideoView
+        player={player}
+        style={StyleSheet.absoluteFill}
+        nativeControls={false}
+        contentFit="contain"
+        allowsFullscreen={false}
+        allowsPictureInPicture={false}
+        onFirstFrameRender={() => setDidRenderFirstFrame(true)}
+      />
+      <HeroMediaOverlay />
+    </>
+  );
+}
+
+export default function LandingPage() {
+  const navigation = useNavigation();
+  const { height, width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const availableHeight = height - insets.top - insets.bottom;
+  const compactLayout = availableHeight <= 760;
+  const ultraCompactLayout = availableHeight <= 700;
+  const reservedVerticalSpace =
+    (ultraCompactLayout ? 236 : compactLayout ? 264 : 296) +
+    (ultraCompactLayout ? 44 : compactLayout ? 56 : 76);
+  const maxHeroHeight = Math.max(ultraCompactLayout ? 160 : 188, availableHeight - reservedVerticalSpace);
+  const heroMediaSize = Math.min(
+    width - (ultraCompactLayout ? 96 : compactLayout ? 84 : 60),
+    Math.max(
+      ultraCompactLayout ? 180 : 206,
+      Math.min(
+        ultraCompactLayout ? 220 : compactLayout ? 244 : 312,
+        Math.round(
+          Math.min(
+            availableHeight * (ultraCompactLayout ? 0.22 : compactLayout ? 0.255 : 0.31),
+            maxHeroHeight
+          )
+        )
+      )
+    )
+  );
+  const shouldUseVideoHero = true;
+
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      if (user) {
+        navigation.replace("Welcome");
+      }
+    });
+
+    return unsubscribe;
+  }, [navigation]);
+
+  return (
+    <SafeAreaView edges={["top", "bottom"]} style={styles.safeArea}>
       <StatusBar style="dark" />
-      <View style={styles.page}>
+      <View
+        style={[
+          styles.page,
+          {
+            flex: 1,
+            paddingTop: ultraCompactLayout ? 10 : compactLayout ? 14 : 20,
+            paddingBottom: ultraCompactLayout ? 10 : compactLayout ? 14 : 20,
+            gap: ultraCompactLayout ? 12 : compactLayout ? 14 : 18,
+          },
+        ]}
+      >
+        <View style={styles.pageGlowTop} />
+        <View style={styles.pageGlowBottom} />
+
         <View style={styles.heroShell}>
-          <View style={styles.topBadge}>
-            <Ionicons name="disc-outline" size={14} color="#7c5d00" />
-            <Text style={styles.topBadgeText}>Track your taste</Text>
-          </View>
+          <Image
+            source={logoImage}
+            style={[
+              styles.logoImage,
+              compactLayout && styles.logoImageCompact,
+              ultraCompactLayout && styles.logoImageUltraCompact,
+            ]}
+            resizeMode="contain"
+          />
 
-          <Image source={logoImage} style={styles.logoImage} resizeMode="contain" />
-
-          <Text style={styles.subtitle}>
+          <Text
+            style={[
+              styles.subtitle,
+              compactLayout && styles.subtitleCompact,
+              ultraCompactLayout && styles.subtitleUltraCompact,
+            ]}
+          >
             Log listens, write reviews, build lists, and shape a profile that reflects your taste.
           </Text>
 
-          <LinearGradient
-            colors={["#fff6cf", "#ffffff"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.heroCard}
+          <View
+            style={[
+              styles.heroCard,
+              compactLayout && styles.heroCardCompact,
+              ultraCompactLayout && styles.heroCardUltraCompact,
+            ]}
           >
+            <View
+              style={[
+                styles.heroGlowPrimary,
+                {
+                  width: heroMediaSize + (ultraCompactLayout ? 44 : 68),
+                  height: heroMediaSize + (ultraCompactLayout ? 34 : 52),
+                },
+              ]}
+            />
+            <View
+              style={[
+                styles.heroGlowSecondary,
+                {
+                  width: heroMediaSize * 0.72,
+                  height: heroMediaSize * 0.72,
+                },
+              ]}
+            />
             <View style={[styles.heroMediaShell, { width: heroMediaSize, height: heroMediaSize }]}>
-              {!didRenderFirstFrame ? (
-                <Image
-                  source={heroFallbackImage}
-                  style={[StyleSheet.absoluteFill, styles.heroFallbackImage]}
-                  resizeMode="contain"
-                />
-              ) : null}
-              <VideoView
-                player={player}
-                style={StyleSheet.absoluteFill}
-                nativeControls={false}
-                contentFit="contain"
-                allowsFullscreen={false}
-                allowsPictureInPicture={false}
-                onFirstFrameRender={() => setDidRenderFirstFrame(true)}
-              />
-              <LinearGradient
-                colors={["rgba(255, 247, 210, 0.16)", "rgba(17, 24, 39, 0.12)", "rgba(17, 24, 39, 0.62)"]}
-                locations={[0, 0.45, 1]}
-                style={styles.heroMediaOverlay}
-              >
-                <View style={styles.heroMediaBadge}>
-                  <View style={styles.heroMediaPulse} />
-                  <Text style={styles.heroMediaBadgeText}>Always on repeat</Text>
-                </View>
-
-                <View style={styles.heroMediaCopy}>
-                  <Text style={styles.heroMediaTitle}>Your listening life, in motion.</Text>
-                  <Text style={styles.heroMediaBody}>
-                    Build lists, drop reviews, and shape a profile that feels alive.
-                  </Text>
-                </View>
-              </LinearGradient>
+              {shouldUseVideoHero ? (
+                <VideoHeroMedia />
+              ) : (
+                <StaticHeroMedia />
+              )}
             </View>
-          </LinearGradient>
+          </View>
         </View>
 
-        <View style={styles.actionsCard}>
-          <Text style={styles.actionsTitle}>Get started</Text>
-          <Text style={styles.actionsSubtitle}>
-            Sign in to continue where you left off, or create an account to start building your
-            profile.
+        <View
+          style={[
+            styles.actionsCard,
+            compactLayout && styles.actionsCardCompact,
+            ultraCompactLayout && styles.actionsCardUltraCompact,
+          ]}
+        >
+          <Text
+            style={[
+              styles.actionsTitle,
+              compactLayout && styles.actionsTitleCompact,
+            ]}
+          >
+            Get started
           </Text>
 
           <TouchableOpacity
             activeOpacity={0.9}
-            style={styles.primaryButton}
+            style={[styles.primaryButton, compactLayout && styles.buttonCompact]}
             onPress={() => navigation.navigate("Sign In")}
           >
             <Text style={styles.primaryButtonText}>Sign In</Text>
@@ -134,18 +229,23 @@ export default function LandingPage() {
 
           <TouchableOpacity
             activeOpacity={0.9}
-            style={styles.secondaryButton}
+            style={[styles.secondaryButton, compactLayout && styles.buttonCompact]}
             onPress={() => navigation.navigate("Sign Up")}
           >
             <Text style={styles.secondaryButtonText}>Sign Up</Text>
           </TouchableOpacity>
 
-          <View style={styles.footerRow}>
+          <View style={[styles.footerRow, compactLayout && styles.footerRowCompact]}>
             <View style={styles.footerDot} />
             <Text style={styles.footerText}>
               Albums, lists, reviews, and profile history in one place.
             </Text>
           </View>
+
+          <LegalAccessLink
+            onPress={() => navigation.navigate("LegalSupport")}
+            style={styles.legalLink}
+          />
         </View>
       </View>
     </SafeAreaView>
@@ -158,37 +258,47 @@ const styles = StyleSheet.create({
     backgroundColor: "#f4f1e6",
   },
   page: {
-    flex: 1,
-    justifyContent: "space-between",
+    position: "relative",
+    justifyContent: "flex-start",
     paddingHorizontal: 22,
-    paddingVertical: 20,
+    overflow: "hidden",
+  },
+  pageGlowTop: {
+    position: "absolute",
+    top: -72,
+    right: -34,
+    width: 184,
+    height: 184,
+    borderRadius: 92,
+    backgroundColor: "rgba(248, 216, 78, 0.22)",
+  },
+  pageGlowBottom: {
+    position: "absolute",
+    bottom: 88,
+    left: -58,
+    width: 164,
+    height: 164,
+    borderRadius: 82,
+    backgroundColor: "rgba(255, 255, 255, 0.72)",
   },
   heroShell: {
     alignItems: "center",
+    flexGrow: 1,
     flexShrink: 1,
-    justifyContent: "center",
-  },
-  topBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
-    backgroundColor: "#fff6cf",
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    marginBottom: 16,
-  },
-  topBadgeText: {
-    color: "#7c5d00",
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
+    justifyContent: "flex-start",
   },
   logoImage: {
     width: 180,
     height: 64,
-    marginBottom: 10,
+    marginBottom: 8,
+  },
+  logoImageCompact: {
+    width: 164,
+    height: 56,
+  },
+  logoImageUltraCompact: {
+    width: 152,
+    height: 52,
   },
   subtitle: {
     fontSize: 15,
@@ -196,57 +306,68 @@ const styles = StyleSheet.create({
     color: "#4b5563",
     textAlign: "center",
     maxWidth: 330,
-    marginBottom: 16,
+    marginBottom: 14,
+  },
+  subtitleCompact: {
+    fontSize: 14,
+    lineHeight: 20,
+    maxWidth: 312,
+    marginBottom: 12,
+  },
+  subtitleUltraCompact: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 10,
   },
   heroCard: {
     width: "100%",
-    borderRadius: 30,
-    borderWidth: 1,
-    borderColor: "#f1e5a8",
-    padding: 8,
-    shadowColor: "#111827",
-    shadowOpacity: 0.08,
-    shadowRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+  },
+  heroCardCompact: {
+    paddingVertical: 10,
+  },
+  heroCardUltraCompact: {
+    paddingVertical: 8,
+  },
+  heroGlowPrimary: {
+    position: "absolute",
+    borderRadius: 999,
+    backgroundColor: "rgba(248, 216, 78, 0.18)",
+    shadowColor: "#f8d84e",
+    shadowOpacity: 0.18,
+    shadowRadius: 28,
     shadowOffset: { width: 0, height: 10 },
-    elevation: 4,
+  },
+  heroGlowSecondary: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 255, 255, 0.55)",
   },
   heroMediaShell: {
     alignSelf: "center",
-    borderRadius: 22,
-    backgroundColor: "#d8d7d2",
+    borderRadius: 28,
+    backgroundColor: "#e5e7eb",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.72)",
     overflow: "hidden",
+    shadowColor: "#111827",
+    shadowOpacity: 0.16,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 16 },
+    elevation: 8,
   },
   heroFallbackImage: {
     opacity: 1,
   },
   heroMediaOverlay: {
     flex: 1,
-    justifyContent: "space-between",
+    justifyContent: "flex-end",
     paddingHorizontal: 16,
     paddingVertical: 16,
-  },
-  heroMediaBadge: {
-    alignSelf: "flex-start",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "rgba(255, 255, 255, 0.82)",
-    borderRadius: 999,
-    paddingHorizontal: 11,
-    paddingVertical: 7,
-  },
-  heroMediaPulse: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: "#f59e0b",
-  },
-  heroMediaBadgeText: {
-    color: "#6b4b00",
-    fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 0.4,
-    textTransform: "uppercase",
   },
   heroMediaCopy: {
     gap: 6,
@@ -258,23 +379,45 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     maxWidth: 220,
   },
+  heroMediaTitleCompact: {
+    fontSize: 20,
+    lineHeight: 24,
+    maxWidth: 190,
+  },
   heroMediaBody: {
     color: "rgba(255, 255, 255, 0.88)",
     fontSize: 13,
     lineHeight: 19,
     maxWidth: 260,
   },
+  heroMediaBodyCompact: {
+    fontSize: 12,
+    lineHeight: 17,
+    maxWidth: 220,
+  },
   actionsCard: {
-    backgroundColor: "#ffffff",
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    borderWidth: 1,
+    borderColor: "rgba(17, 24, 39, 0.06)",
     borderRadius: 28,
     paddingHorizontal: 22,
     paddingVertical: 20,
     shadowColor: "#111827",
-    shadowOpacity: 0.05,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 3,
-    marginTop: 18,
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 4,
+    marginTop: "auto",
+  },
+  actionsCardCompact: {
+    borderRadius: 24,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+  },
+  actionsCardUltraCompact: {
+    borderRadius: 22,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
   },
   actionsTitle: {
     fontSize: 22,
@@ -282,19 +425,35 @@ const styles = StyleSheet.create({
     color: "#111827",
     marginBottom: 8,
   },
+  actionsTitleCompact: {
+    fontSize: 20,
+    marginBottom: 6,
+  },
   actionsSubtitle: {
     fontSize: 14,
     lineHeight: 21,
     color: "#6b7280",
     marginBottom: 18,
   },
+  actionsSubtitleCompact: {
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 14,
+  },
   primaryButton: {
     minHeight: 54,
     borderRadius: 16,
-    backgroundColor: "#111827",
+    backgroundColor: "#18181b",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 10,
+    shadowColor: "#111827",
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 8 },
+  },
+  buttonCompact: {
+    minHeight: 48,
   },
   primaryButtonText: {
     color: "#ffffff",
@@ -305,8 +464,8 @@ const styles = StyleSheet.create({
     minHeight: 54,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#d1d5db",
-    backgroundColor: "#ffffff",
+    borderColor: "rgba(17, 24, 39, 0.1)",
+    backgroundColor: "rgba(255, 255, 255, 0.72)",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -321,6 +480,9 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 18,
   },
+  footerRowCompact: {
+    marginTop: 14,
+  },
   footerDot: {
     width: 8,
     height: 8,
@@ -332,5 +494,8 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     color: "#6b7280",
+  },
+  legalLink: {
+    marginTop: 14,
   },
 });

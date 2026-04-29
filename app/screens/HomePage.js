@@ -441,7 +441,7 @@ const styles = StyleSheet.create({
   masonrySleeve: {
     position: "relative",
     backgroundColor: "#d6d6d6",
-    borderRadius: 2,
+    borderRadius: 4,
     overflow: "hidden",
     shadowColor: "#000",
     shadowOpacity: 0.08,
@@ -453,7 +453,7 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
     resizeMode: "cover",
-    borderRadius: 2,
+    borderRadius: 4,
   },
   missingCoverTile: {
     flex: 1,

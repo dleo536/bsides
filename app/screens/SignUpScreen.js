@@ -4,11 +4,11 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { auth } from "../config/firebase";
@@ -24,6 +24,7 @@ import {
   createBackendUserProfile,
   getSignupAvailability,
 } from "../api/UserAPI";
+import LegalAccessLink from "../components/LegalAccessLink";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const USERNAME_REGEX = /^[A-Za-z0-9._]+$/;
@@ -85,6 +86,9 @@ const validateUsername = (username) => {
 
 export default function SignUpScreen() {
   const navigation = useNavigation();
+  const { height } = useWindowDimensions();
+  const compactLayout = height <= 820;
+  const ultraCompactLayout = height <= 740;
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -393,20 +397,42 @@ export default function SignUpScreen() {
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
+        <View
+          style={[
+            styles.content,
+            compactLayout && styles.contentCompact,
+            ultraCompactLayout && styles.contentUltraCompact,
+          ]}
         >
-          <View style={styles.hero}>
-            <Text style={styles.brand}>b.sides</Text>
-            <Text style={styles.title}>Create your account</Text>
-            <Text style={styles.subtitle}>
-              Claim your username and start building your taste.
+          <View
+            style={[
+              styles.hero,
+              compactLayout && styles.heroCompact,
+              ultraCompactLayout && styles.heroUltraCompact,
+            ]}
+          >
+            <Text
+              style={[
+                styles.brand,
+                compactLayout && styles.brandCompact,
+                ultraCompactLayout && styles.brandUltraCompact,
+              ]}
+            >
+              b.sides
+            </Text>
+            <Text style={[styles.title, compactLayout && styles.titleCompact]}>
+              Create your account
             </Text>
           </View>
 
-          <View style={styles.card}>
-            <View style={styles.fieldGroup}>
+          <View
+            style={[
+              styles.card,
+              compactLayout && styles.cardCompact,
+              ultraCompactLayout && styles.cardUltraCompact,
+            ]}
+          >
+            <View style={[styles.fieldGroup, compactLayout && styles.fieldGroupCompact]}>
               <View style={styles.fieldHeader}>
                 <Text style={styles.label}>Email</Text>
                 {emailIsValid ? (
@@ -426,6 +452,7 @@ export default function SignUpScreen() {
                 }}
                 style={[
                   styles.input,
+                  compactLayout && styles.inputCompact,
                   getInputStateStyle({
                     hasError: showEmailError,
                     isValid: emailIsValid,
@@ -440,25 +467,27 @@ export default function SignUpScreen() {
               {showEmailError ? (
                 <Text style={styles.errorText}>{emailError}</Text>
               ) : emailAvailability.status === "checking" ? (
-                <Text style={styles.helperText}>{emailAvailability.message}</Text>
+                <Text style={[styles.helperText, compactLayout && styles.helperTextCompact]}>
+                  {emailAvailability.message}
+                </Text>
               ) : emailAvailability.message ? (
                 <Text
                   style={
                     emailAvailability.status === "available"
-                      ? styles.successText
-                      : styles.helperText
+                      ? [styles.successText, compactLayout && styles.helperTextCompact]
+                      : [styles.helperText, compactLayout && styles.helperTextCompact]
                   }
                 >
                   {emailAvailability.message}
                 </Text>
               ) : (
-                <Text style={styles.helperText}>
+                <Text style={[styles.helperText, compactLayout && styles.helperTextCompact]}>
                   Use a real email address you can access.
                 </Text>
               )}
             </View>
 
-            <View style={styles.fieldGroup}>
+            <View style={[styles.fieldGroup, compactLayout && styles.fieldGroupCompact]}>
               <View style={styles.fieldHeader}>
                 <Text style={styles.label}>Password</Text>
                 {isPasswordValid ? (
@@ -482,6 +511,7 @@ export default function SignUpScreen() {
                 }}
                 style={[
                   styles.input,
+                  compactLayout && styles.inputCompact,
                   getInputStateStyle({
                     hasError: showPasswordError,
                     isValid: touched.password && isPasswordValid,
@@ -493,7 +523,7 @@ export default function SignUpScreen() {
                 autoCorrect={false}
                 placeholderTextColor="#9ca3af"
               />
-              <View style={styles.rulesCard}>
+              <View style={[styles.rulesCard, compactLayout && styles.rulesCardCompact]}>
                 {passwordRules.map((rule) => (
                   <View key={rule.key} style={styles.ruleRow}>
                     <Ionicons
@@ -504,6 +534,7 @@ export default function SignUpScreen() {
                     <Text
                       style={[
                         styles.ruleText,
+                        compactLayout && styles.ruleTextCompact,
                         rule.met ? styles.ruleTextMet : null,
                       ]}
                     >
@@ -515,13 +546,13 @@ export default function SignUpScreen() {
               {showPasswordError ? (
                 <Text style={styles.errorText}>{passwordError}</Text>
               ) : (
-                <Text style={styles.helperText}>
+                <Text style={[styles.helperText, compactLayout && styles.helperTextCompact]}>
                   Use a password you have not used elsewhere.
                 </Text>
               )}
             </View>
 
-            <View style={styles.fieldGroup}>
+            <View style={[styles.fieldGroup, compactLayout && styles.fieldGroupCompact]}>
               <View style={styles.fieldHeader}>
                 <Text style={styles.label}>Username</Text>
                 {usernameIsValid ? (
@@ -541,6 +572,7 @@ export default function SignUpScreen() {
                 }}
                 style={[
                   styles.input,
+                  compactLayout && styles.inputCompact,
                   getInputStateStyle({
                     hasError: showUsernameError,
                     isValid: usernameIsValid,
@@ -553,30 +585,37 @@ export default function SignUpScreen() {
               {showUsernameError ? (
                 <Text style={styles.errorText}>{usernameError}</Text>
               ) : usernameAvailability.status === "checking" ? (
-                <Text style={styles.helperText}>{usernameAvailability.message}</Text>
+                <Text style={[styles.helperText, compactLayout && styles.helperTextCompact]}>
+                  {usernameAvailability.message}
+                </Text>
               ) : usernameAvailability.message ? (
                 <Text
                   style={
                     usernameAvailability.status === "available"
-                      ? styles.successText
-                      : styles.helperText
+                      ? [styles.successText, compactLayout && styles.helperTextCompact]
+                      : [styles.helperText, compactLayout && styles.helperTextCompact]
                   }
                 >
                   {usernameAvailability.message}
                 </Text>
               ) : (
-                <Text style={styles.helperText}>
+                <Text style={[styles.helperText, compactLayout && styles.helperTextCompact]}>
                   3-24 characters. Letters, numbers, periods, and underscores.
                 </Text>
               )}
             </View>
 
-            {formError ? <Text style={styles.formError}>{formError}</Text> : null}
+            {formError ? (
+              <Text style={[styles.formError, compactLayout && styles.formErrorCompact]}>
+                {formError}
+              </Text>
+            ) : null}
 
             <TouchableOpacity
               onPress={handleSignUp}
               style={[
                 styles.primaryButton,
+                compactLayout && styles.primaryButtonCompact,
                 isSubmitting ? styles.primaryButtonDisabled : null,
               ]}
               disabled={isSubmitting}
@@ -594,15 +633,23 @@ export default function SignUpScreen() {
 
             <TouchableOpacity
               onPress={() => navigation.navigate("Sign In")}
-              style={styles.secondaryAction}
+              style={[
+                styles.secondaryAction,
+                compactLayout && styles.secondaryActionCompact,
+              ]}
               disabled={isSubmitting}
             >
               <Text style={styles.secondaryActionText}>
                 Already have an account? Sign in
               </Text>
             </TouchableOpacity>
+
+            <LegalAccessLink
+              onPress={() => navigation.navigate("LegalSupport")}
+              style={[styles.legalLink, compactLayout && styles.legalLinkCompact]}
+            />
           </View>
-        </ScrollView>
+        </View>
       </KeyboardAvoidingView>
     </View>
   );
@@ -616,28 +663,54 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#f4f4ef",
   },
-  scrollContent: {
-    flexGrow: 1,
-    justifyContent: "center",
+  content: {
+    flex: 1,
+    justifyContent: "flex-start",
     paddingHorizontal: 20,
-    paddingVertical: 32,
+    paddingTop: 20,
+    paddingBottom: 18,
+  },
+  contentCompact: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 12,
+  },
+  contentUltraCompact: {
+    paddingTop: 10,
+    paddingBottom: 10,
   },
   hero: {
-    marginBottom: 22,
+    marginBottom: 14,
     alignItems: "center",
   },
+  heroCompact: {
+    marginBottom: 10,
+  },
+  heroUltraCompact: {
+    marginBottom: 8,
+  },
   brand: {
-    fontSize: 42,
+    fontSize: 38,
     fontWeight: "800",
     color: "#111827",
     letterSpacing: -1.2,
   },
+  brandCompact: {
+    fontSize: 34,
+  },
+  brandUltraCompact: {
+    fontSize: 30,
+  },
   title: {
     marginTop: 12,
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: "800",
     color: "#111827",
     textAlign: "center",
+  },
+  titleCompact: {
+    marginTop: 6,
+    fontSize: 22,
   },
   subtitle: {
     marginTop: 8,
@@ -646,11 +719,20 @@ const styles = StyleSheet.create({
     color: "#6b7280",
     textAlign: "center",
   },
+  subtitleCompact: {
+    marginTop: 6,
+    fontSize: 14,
+    lineHeight: 19,
+  },
+  subtitleUltraCompact: {
+    fontSize: 13,
+    lineHeight: 17,
+  },
   card: {
     backgroundColor: "#ffffff",
     borderRadius: 24,
-    paddingHorizontal: 18,
-    paddingVertical: 22,
+    paddingHorizontal: 16,
+    paddingVertical: 18,
     borderWidth: 1,
     borderColor: "#ece8dc",
     shadowColor: "#000000",
@@ -659,8 +741,19 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     elevation: 2,
   },
+  cardCompact: {
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  cardUltraCompact: {
+    paddingVertical: 12,
+  },
   fieldGroup: {
-    marginBottom: 18,
+    marginBottom: 14,
+  },
+  fieldGroupCompact: {
+    marginBottom: 10,
   },
   fieldHeader: {
     flexDirection: "row",
@@ -684,6 +777,10 @@ const styles = StyleSheet.create({
     color: "#111827",
     backgroundColor: "#ffffff",
   },
+  inputCompact: {
+    paddingVertical: 10,
+    fontSize: 14,
+  },
   inputError: {
     borderColor: "#dc2626",
     backgroundColor: "#fef2f2",
@@ -694,12 +791,17 @@ const styles = StyleSheet.create({
   },
   rulesCard: {
     marginTop: 10,
-    padding: 12,
+    padding: 10,
     borderRadius: 14,
     backgroundColor: "#f8fafc",
     borderWidth: 1,
     borderColor: "#e5e7eb",
-    gap: 8,
+    gap: 6,
+  },
+  rulesCardCompact: {
+    marginTop: 6,
+    padding: 8,
+    gap: 6,
   },
   ruleRow: {
     flexDirection: "row",
@@ -710,6 +812,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#64748b",
   },
+  ruleTextCompact: {
+    fontSize: 12,
+  },
   ruleTextMet: {
     color: "#166534",
     fontWeight: "600",
@@ -719,6 +824,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
     color: "#6b7280",
+  },
+  helperTextCompact: {
+    marginTop: 5,
+    fontSize: 11,
+    lineHeight: 16,
   },
   successText: {
     marginTop: 7,
@@ -735,11 +845,16 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   formError: {
-    marginBottom: 14,
+    marginBottom: 10,
     fontSize: 13,
     lineHeight: 19,
     color: "#b91c1c",
     fontWeight: "600",
+  },
+  formErrorCompact: {
+    marginBottom: 10,
+    fontSize: 12,
+    lineHeight: 17,
   },
   successBadge: {
     flexDirection: "row",
@@ -758,6 +873,10 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingVertical: 15,
     marginTop: 4,
+  },
+  primaryButtonCompact: {
+    paddingVertical: 13,
+    marginTop: 2,
   },
   primaryButtonDisabled: {
     opacity: 0.85,
@@ -778,9 +897,19 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     marginTop: 6,
   },
+  secondaryActionCompact: {
+    paddingVertical: 10,
+    marginTop: 4,
+  },
   secondaryActionText: {
     fontSize: 14,
     fontWeight: "600",
     color: "#4b5563",
+  },
+  legalLink: {
+    marginTop: 14,
+  },
+  legalLinkCompact: {
+    marginTop: 10,
   },
 });

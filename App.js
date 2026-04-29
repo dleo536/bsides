@@ -1,55 +1,54 @@
-import { NavigationContainer } from "@react-navigation/native";
-import AppNavigator from "./app/navigation/AppNavigator";
 import React from "react";
-import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { SafeAreaView, StyleSheet, Text, View } from "react-native";
 
-import "./app/config/firebase";
-import Welcome from "./app/screens/Welcome";
-import SignInScreen from "./app/screens/SignInScreen";
-import HomePage from "./app/screens/HomePage";
-import SignUpScreen from "./app/screens/SignUpScreen";
-import LandingPage from "./app/screens/LandingPage";
-import ProfilePicturePage from "./app/screens/ProfilePicture";
-
-const Stack = createNativeStackNavigator();
+const USE_REACT_MINIMAL_DIAGNOSTIC = false;
 
 export default function App() {
-  return (
-    <NavigationContainer>
-      <Stack.Navigator>
-        <Stack.Screen
-          options={{ headerShown: false }}
-          name="Landing"
-          component={LandingPage}
-        ></Stack.Screen>
-        <Stack.Screen
-          options={{ headerShown: false }}
-          name="Welcome"
-          component={Welcome}
-        ></Stack.Screen>
-        <Stack.Screen
-          options={{ headerShown: false }}
-          name="Sign Up"
-          component={SignUpScreen}
-        ></Stack.Screen>
-        <Stack.Screen
-          options={{ headerShown: false }}
-          name="Sign In"
-          component={SignInScreen}
-        ></Stack.Screen>
-        <Stack.Screen
-          name="Profile Picture"
-          component={ProfilePicturePage}
-          options={{
-            headerShown: false,
-            headerBackVisible: false,
-            gestureEnabled: false,
-          }}
-        />
-      </Stack.Navigator>
-    </NavigationContainer>
-    // <NavigationContainer>
-    //   <AppNavigator></AppNavigator>
-    // </NavigationContainer>
-  );
+  if (USE_REACT_MINIMAL_DIAGNOSTIC) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.container}>
+          <Text style={styles.eyebrow}>React Startup Diagnostic</Text>
+          <Text style={styles.title}>React rendered successfully.</Text>
+          <Text style={styles.body}>
+            This screen avoids navigation, Firebase, and the normal app imports.
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const FullApp = require("./App.full").default;
+  return <FullApp />;
 }
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: "#ffffff",
+  },
+  container: {
+    flex: 1,
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    gap: 16,
+  },
+  eyebrow: {
+    fontSize: 13,
+    fontWeight: "700",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    color: "#8a5a00",
+  },
+  title: {
+    fontSize: 30,
+    lineHeight: 36,
+    fontWeight: "800",
+    color: "#111827",
+  },
+  body: {
+    fontSize: 16,
+    lineHeight: 24,
+    color: "#374151",
+  },
+});

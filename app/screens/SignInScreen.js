@@ -5,11 +5,11 @@ import {
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { signInWithEmailAndPassword } from "firebase/auth";
@@ -17,9 +17,13 @@ import { useNavigation } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { auth } from "../config/firebase";
+import LegalAccessLink from "../components/LegalAccessLink";
 
 export default function SignInScreen() {
   const navigation = useNavigation();
+  const { height } = useWindowDimensions();
+  const compactLayout = height <= 760;
+  const ultraCompactLayout = height <= 700;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -71,99 +75,139 @@ export default function SignInScreen() {
         style={styles.keyboardWrap}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
+        <View
+          style={[
+            styles.page,
+            compactLayout && styles.pageCompact,
+            ultraCompactLayout && styles.pageUltraCompact,
+          ]}
         >
-          <View style={styles.page}>
-            <View style={styles.header}>
-              <Text style={styles.brand}>b.sides</Text>
-              <Text style={styles.title}>Welcome back</Text>
-              <Text style={styles.subtitle}>
-                Sign in to pick up your lists, reviews, and profile where you left off.
-              </Text>
+          <View
+            style={[
+              styles.header,
+              compactLayout && styles.headerCompact,
+              ultraCompactLayout && styles.headerUltraCompact,
+            ]}
+          >
+            <Text
+              style={[
+                styles.brand,
+                compactLayout && styles.brandCompact,
+                ultraCompactLayout && styles.brandUltraCompact,
+              ]}
+            >
+              b.sides
+            </Text>
+            <Text
+              style={[
+                styles.title,
+                compactLayout && styles.titleCompact,
+              ]}
+            >
+              Welcome back
+            </Text>
+            <Text
+              style={[
+                styles.subtitle,
+                compactLayout && styles.subtitleCompact,
+                ultraCompactLayout && styles.subtitleUltraCompact,
+              ]}
+            >
+              Sign in to pick up your lists, reviews, and profile where you left off.
+            </Text>
+          </View>
+
+          <LinearGradient
+            colors={["#fff6cf", "#ffffff"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[
+              styles.card,
+              compactLayout && styles.cardCompact,
+              ultraCompactLayout && styles.cardUltraCompact,
+            ]}
+          >
+            <View style={[styles.inputBlock, compactLayout && styles.inputBlockCompact]}>
+              <Text style={styles.inputLabel}>Email</Text>
+              <View style={[styles.inputShell, compactLayout && styles.inputShellCompact]}>
+                <Ionicons name="mail-outline" size={18} color="#6b7280" />
+                <TextInput
+                  placeholder="you@example.com"
+                  placeholderTextColor="#9ca3af"
+                  value={email}
+                  onChangeText={(text) => {
+                    setEmail(text);
+                    if (errorMessage) {
+                      setErrorMessage("");
+                    }
+                  }}
+                  style={[styles.input, compactLayout && styles.inputCompact]}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                  textContentType="emailAddress"
+                />
+              </View>
             </View>
 
-            <LinearGradient
-              colors={["#fff6cf", "#ffffff"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.card}
+            <View style={[styles.inputBlock, compactLayout && styles.inputBlockCompact]}>
+              <Text style={styles.inputLabel}>Password</Text>
+              <View style={[styles.inputShell, compactLayout && styles.inputShellCompact]}>
+                <Ionicons name="lock-closed-outline" size={18} color="#6b7280" />
+                <TextInput
+                  placeholder="Enter your password"
+                  placeholderTextColor="#9ca3af"
+                  value={password}
+                  onChangeText={(text) => {
+                    setPassword(text);
+                    if (errorMessage) {
+                      setErrorMessage("");
+                    }
+                  }}
+                  style={[styles.input, compactLayout && styles.inputCompact]}
+                  secureTextEntry
+                  textContentType="password"
+                />
+              </View>
+            </View>
+
+            {errorMessage ? (
+              <View style={[styles.errorBanner, compactLayout && styles.errorBannerCompact]}>
+                <Ionicons name="alert-circle" size={18} color="#b91c1c" />
+                <Text style={styles.errorText}>{errorMessage}</Text>
+              </View>
+            ) : null}
+
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={handleLogin}
+              disabled={isSubmitting}
+              style={[
+                styles.primaryButton,
+                compactLayout && styles.buttonCompact,
+                isSubmitting && styles.buttonDisabled,
+              ]}
             >
-              <View style={styles.inputBlock}>
-                <Text style={styles.inputLabel}>Email</Text>
-                <View style={styles.inputShell}>
-                  <Ionicons name="mail-outline" size={18} color="#6b7280" />
-                  <TextInput
-                    placeholder="you@example.com"
-                    placeholderTextColor="#9ca3af"
-                    value={email}
-                    onChangeText={(text) => {
-                      setEmail(text);
-                      if (errorMessage) {
-                        setErrorMessage("");
-                      }
-                    }}
-                    style={styles.input}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    keyboardType="email-address"
-                    textContentType="emailAddress"
-                  />
-                </View>
-              </View>
+              {isSubmitting ? (
+                <ActivityIndicator color="#ffffff" />
+              ) : (
+                <Text style={styles.primaryButtonText}>Sign In</Text>
+              )}
+            </TouchableOpacity>
 
-              <View style={styles.inputBlock}>
-                <Text style={styles.inputLabel}>Password</Text>
-                <View style={styles.inputShell}>
-                  <Ionicons name="lock-closed-outline" size={18} color="#6b7280" />
-                  <TextInput
-                    placeholder="Enter your password"
-                    placeholderTextColor="#9ca3af"
-                    value={password}
-                    onChangeText={(text) => {
-                      setPassword(text);
-                      if (errorMessage) {
-                        setErrorMessage("");
-                      }
-                    }}
-                    style={styles.input}
-                    secureTextEntry
-                    textContentType="password"
-                  />
-                </View>
-              </View>
-
-              {errorMessage ? (
-                <View style={styles.errorBanner}>
-                  <Ionicons name="alert-circle" size={18} color="#b91c1c" />
-                  <Text style={styles.errorText}>{errorMessage}</Text>
-                </View>
-              ) : null}
-
-              <TouchableOpacity
-                activeOpacity={0.9}
-                onPress={handleLogin}
-                disabled={isSubmitting}
-                style={[styles.primaryButton, isSubmitting && styles.buttonDisabled]}
-              >
-                {isSubmitting ? (
-                  <ActivityIndicator color="#ffffff" />
-                ) : (
-                  <Text style={styles.primaryButtonText}>Sign In</Text>
-                )}
+            <View style={[styles.signupRow, compactLayout && styles.signupRowCompact]}>
+              <Text style={styles.signupPrompt}>Don’t have an account? </Text>
+              <TouchableOpacity onPress={() => navigation.navigate("Sign Up")}>
+                <Text style={styles.signupLink}>Sign up</Text>
               </TouchableOpacity>
+            </View>
 
-              <View style={styles.signupRow}>
-                <Text style={styles.signupPrompt}>Don’t have an account? </Text>
-                <TouchableOpacity onPress={() => navigation.navigate("Sign Up")}>
-                  <Text style={styles.signupLink}>Sign up</Text>
-                </TouchableOpacity>
-              </View>
-            </LinearGradient>
-          </View>
-        </ScrollView>
+            <LegalAccessLink
+              onPress={() => navigation.navigate("LegalSupport")}
+              style={[styles.legalLink, compactLayout && styles.legalLinkCompact]}
+            />
+          </LinearGradient>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -177,18 +221,28 @@ const styles = StyleSheet.create({
   keyboardWrap: {
     flex: 1,
   },
-  scrollContent: {
-    flexGrow: 1,
-  },
   page: {
     flex: 1,
     justifyContent: "center",
     paddingHorizontal: 22,
     paddingVertical: 28,
   },
+  pageCompact: {
+    paddingHorizontal: 18,
+    paddingVertical: 20,
+  },
+  pageUltraCompact: {
+    paddingVertical: 14,
+  },
   header: {
     alignItems: "center",
     marginBottom: 24,
+  },
+  headerCompact: {
+    marginBottom: 18,
+  },
+  headerUltraCompact: {
+    marginBottom: 14,
   },
   brand: {
     fontSize: 38,
@@ -196,6 +250,14 @@ const styles = StyleSheet.create({
     letterSpacing: -1,
     color: "#1f2937",
     marginBottom: 12,
+  },
+  brandCompact: {
+    fontSize: 34,
+    marginBottom: 10,
+  },
+  brandUltraCompact: {
+    fontSize: 30,
+    marginBottom: 8,
   },
   title: {
     fontSize: 30,
@@ -205,12 +267,27 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 10,
   },
+  titleCompact: {
+    fontSize: 26,
+    lineHeight: 32,
+    marginBottom: 8,
+  },
   subtitle: {
     fontSize: 15,
     lineHeight: 22,
     color: "#4b5563",
     textAlign: "center",
     maxWidth: 320,
+  },
+  subtitleCompact: {
+    fontSize: 14,
+    lineHeight: 20,
+    maxWidth: 300,
+  },
+  subtitleUltraCompact: {
+    fontSize: 13,
+    lineHeight: 18,
+    maxWidth: 286,
   },
   card: {
     borderRadius: 28,
@@ -224,8 +301,21 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     elevation: 4,
   },
+  cardCompact: {
+    borderRadius: 24,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+  },
+  cardUltraCompact: {
+    borderRadius: 22,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
   inputBlock: {
     marginBottom: 16,
+  },
+  inputBlockCompact: {
+    marginBottom: 12,
   },
   inputLabel: {
     fontSize: 14,
@@ -243,12 +333,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
+  inputShellCompact: {
+    minHeight: 48,
+  },
   input: {
     flex: 1,
     fontSize: 16,
     color: "#111827",
     marginLeft: 10,
     paddingVertical: 14,
+  },
+  inputCompact: {
+    fontSize: 15,
+    paddingVertical: 10,
   },
   errorBanner: {
     width: "100%",
@@ -262,6 +359,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     marginBottom: 16,
+  },
+  errorBannerCompact: {
+    paddingVertical: 10,
+    marginBottom: 12,
   },
   errorText: {
     flex: 1,
@@ -292,6 +393,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     flexWrap: "wrap",
   },
+  signupRowCompact: {
+    marginTop: 14,
+  },
   signupPrompt: {
     color: "#6b7280",
     fontSize: 14,
@@ -300,5 +404,11 @@ const styles = StyleSheet.create({
     color: "#111827",
     fontSize: 14,
     fontWeight: "700",
+  },
+  legalLink: {
+    marginTop: 16,
+  },
+  legalLinkCompact: {
+    marginTop: 12,
   },
 });

@@ -69,7 +69,7 @@ const styles = StyleSheet.create({
   albumCover: {
     width: 80,
     height: 80,
-    borderRadius: 6,
+    borderRadius: 4,
     backgroundColor: "#ddd",
     marginRight: 16,
   },

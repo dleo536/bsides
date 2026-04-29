@@ -1,7 +1,7 @@
 //import fetch from "node-fetch";
 
 const HEADERS = {
-  "User-Agent": "b.sides/1.0 (support@bsides.invalid)",
+  "User-Agent": "b.sides/1.0 (support@bsides.pro)",
 };
 
 const BASE_URL = "https://musicbrainz.org/ws/2";
@@ -17,7 +17,7 @@ export async function searchReleaseGroup(album, artist) {
 
   const res = await fetch(url, {
     headers: {
-      "User-Agent": "b.sides/1.0 (support@bsides.invalid)",
+      "User-Agent": "b.sides/1.0 (support@bsides.pro)",
     },
   });
 

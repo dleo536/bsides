@@ -3,10 +3,10 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
@@ -22,6 +22,9 @@ import defaultProfileImage from "../../assets/defaultProfilePicture.png";
 
 const ProfilePicturePage = () => {
   const navigation = useNavigation();
+  const { height } = useWindowDimensions();
+  const compactLayout = height <= 760;
+  const ultraCompactLayout = height <= 700;
   const [selectedImageUri, setSelectedImageUri] = useState(null);
   const [isPicking, setIsPicking] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -141,105 +144,146 @@ const ProfilePicturePage = () => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+      <View
+        style={[
+          styles.page,
+          compactLayout && styles.pageCompact,
+          ultraCompactLayout && styles.pageUltraCompact,
+        ]}
       >
-        <View style={styles.page}>
-          <View style={styles.header}>
-            <Text style={styles.brand}>b.sides</Text>
-            <View style={styles.optionalBadge}>
-              <Text style={styles.optionalBadgeText}>Optional step</Text>
-            </View>
-            <Text style={styles.title}>Add a profile photo</Text>
-            <Text style={styles.subtitle}>
-              Help people recognize you on lists, reviews, and your profile.
-              You can always change this later.
-            </Text>
+        <View
+          style={[
+            styles.header,
+            compactLayout && styles.headerCompact,
+            ultraCompactLayout && styles.headerUltraCompact,
+          ]}
+        >
+          <Text
+            style={[
+              styles.brand,
+              compactLayout && styles.brandCompact,
+              ultraCompactLayout && styles.brandUltraCompact,
+            ]}
+          >
+            b.sides
+          </Text>
+          <View style={styles.optionalBadge}>
+            <Text style={styles.optionalBadgeText}>Optional step</Text>
           </View>
+          <Text style={[styles.title, compactLayout && styles.titleCompact]}>
+            Add a profile photo
+          </Text>
+          <Text
+            style={[
+              styles.subtitle,
+              compactLayout && styles.subtitleCompact,
+              ultraCompactLayout && styles.subtitleUltraCompact,
+            ]}
+          >
+            Help people recognize you on lists, reviews, and your profile.
+            You can always change this later.
+          </Text>
+        </View>
 
-          <View style={styles.card}>
-            <TouchableOpacity
-              activeOpacity={0.88}
-              disabled={isSubmitting || isPicking}
-              onPress={pickImage}
-              style={styles.previewButton}
-            >
-              <LinearGradient
-                colors={["#f8d84e", "#ffe9a5"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.previewRing}
-              >
-                <Image source={previewSource} style={styles.previewImage} />
-                <View style={styles.previewBadge}>
-                  <Ionicons
-                    color="#111827"
-                    name={selectedImageUri ? "checkmark" : "camera"}
-                    size={20}
-                  />
-                </View>
-              </LinearGradient>
-            </TouchableOpacity>
-
-            <Text style={styles.previewTitle}>
-              {selectedImageUri ? "Preview ready" : "Choose something that feels like you"}
-            </Text>
-            <Text style={styles.previewSubtitle}>{helperLabel}</Text>
-
-            {errorMessage ? (
-              <View style={styles.errorBanner}>
-                <Ionicons name="alert-circle" size={18} color="#b91c1c" />
-                <Text style={styles.errorText}>{errorMessage}</Text>
-              </View>
-            ) : null}
-
-            <TouchableOpacity
-              activeOpacity={0.9}
-              disabled={isSubmitting || isPicking}
-              onPress={handlePrimaryAction}
+        <View
+          style={[
+            styles.card,
+            compactLayout && styles.cardCompact,
+            ultraCompactLayout && styles.cardUltraCompact,
+          ]}
+        >
+          <TouchableOpacity
+            activeOpacity={0.88}
+            disabled={isSubmitting || isPicking}
+            onPress={pickImage}
+            style={[styles.previewButton, compactLayout && styles.previewButtonCompact]}
+          >
+            <LinearGradient
+              colors={["#f8d84e", "#ffe9a5"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
               style={[
-                styles.primaryButton,
-                (isSubmitting || isPicking) && styles.buttonDisabled,
+                styles.previewRing,
+                compactLayout && styles.previewRingCompact,
+                ultraCompactLayout && styles.previewRingUltraCompact,
               ]}
             >
-              {isSubmitting ? (
-                <ActivityIndicator color="#ffffff" />
-              ) : isPicking ? (
-                <ActivityIndicator color="#ffffff" />
-              ) : (
-                <Text style={styles.primaryButtonText}>{primaryLabel}</Text>
-              )}
-            </TouchableOpacity>
+              <Image source={previewSource} style={styles.previewImage} />
+              <View style={styles.previewBadge}>
+                <Ionicons
+                  color="#111827"
+                  name={selectedImageUri ? "checkmark" : "camera"}
+                  size={20}
+                />
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
 
-            {selectedImageUri ? (
-              <TouchableOpacity
-                activeOpacity={0.8}
-                disabled={isSubmitting || isPicking}
-                onPress={pickImage}
-                style={styles.secondaryButton}
-              >
-                <Text style={styles.secondaryButtonText}>Choose a different photo</Text>
-              </TouchableOpacity>
-            ) : null}
+          <Text style={[styles.previewTitle, compactLayout && styles.previewTitleCompact]}>
+            {selectedImageUri ? "Preview ready" : "Choose something that feels like you"}
+          </Text>
+          <Text
+            style={[
+              styles.previewSubtitle,
+              compactLayout && styles.previewSubtitleCompact,
+            ]}
+          >
+            {helperLabel}
+          </Text>
 
+          {errorMessage ? (
+            <View style={[styles.errorBanner, compactLayout && styles.errorBannerCompact]}>
+              <Ionicons name="alert-circle" size={18} color="#b91c1c" />
+              <Text style={styles.errorText}>{errorMessage}</Text>
+            </View>
+          ) : null}
+
+          <TouchableOpacity
+            activeOpacity={0.9}
+            disabled={isSubmitting || isPicking}
+            onPress={handlePrimaryAction}
+            style={[
+              styles.primaryButton,
+              compactLayout && styles.buttonCompact,
+              (isSubmitting || isPicking) && styles.buttonDisabled,
+            ]}
+          >
+            {isSubmitting ? (
+              <ActivityIndicator color="#ffffff" />
+            ) : isPicking ? (
+              <ActivityIndicator color="#ffffff" />
+            ) : (
+              <Text style={styles.primaryButtonText}>{primaryLabel}</Text>
+            )}
+          </TouchableOpacity>
+
+          {selectedImageUri ? (
             <TouchableOpacity
               activeOpacity={0.8}
               disabled={isSubmitting || isPicking}
-              onPress={handleSkip}
-              style={styles.skipButton}
+              onPress={pickImage}
+              style={[styles.secondaryButton, compactLayout && styles.secondaryButtonCompact]}
             >
-              <Text style={styles.skipButtonText}>Skip for now</Text>
+              <Text style={styles.secondaryButtonText}>Choose a different photo</Text>
             </TouchableOpacity>
+          ) : null}
 
-            <Text style={styles.footnote}>
-              {selectedImageUri
-                ? "Your photo will be uploaded when you continue."
-                : "You can keep going without a profile picture."}
-            </Text>
-          </View>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            disabled={isSubmitting || isPicking}
+            onPress={handleSkip}
+            style={[styles.skipButton, compactLayout && styles.skipButtonCompact]}
+          >
+            <Text style={styles.skipButtonText}>Skip for now</Text>
+          </TouchableOpacity>
+
+          <Text style={[styles.footnote, compactLayout && styles.footnoteCompact]}>
+            {selectedImageUri
+              ? "Your photo will be uploaded when you continue."
+              : "You can keep going without a profile picture."}
+          </Text>
         </View>
-      </ScrollView>
+      </View>
     </SafeAreaView>
   );
 };
@@ -249,18 +293,28 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#f4f1e6",
   },
-  scrollContent: {
-    flexGrow: 1,
-  },
   page: {
     flex: 1,
     justifyContent: "center",
     paddingHorizontal: 22,
     paddingVertical: 28,
   },
+  pageCompact: {
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+  },
+  pageUltraCompact: {
+    paddingVertical: 12,
+  },
   header: {
     alignItems: "center",
     marginBottom: 24,
+  },
+  headerCompact: {
+    marginBottom: 18,
+  },
+  headerUltraCompact: {
+    marginBottom: 14,
   },
   brand: {
     fontSize: 38,
@@ -268,6 +322,14 @@ const styles = StyleSheet.create({
     letterSpacing: -1,
     color: "#1f2937",
     marginBottom: 12,
+  },
+  brandCompact: {
+    fontSize: 34,
+    marginBottom: 10,
+  },
+  brandUltraCompact: {
+    fontSize: 30,
+    marginBottom: 8,
   },
   optionalBadge: {
     backgroundColor: "#fff6cf",
@@ -291,12 +353,27 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 10,
   },
+  titleCompact: {
+    fontSize: 26,
+    lineHeight: 32,
+    marginBottom: 8,
+  },
   subtitle: {
     fontSize: 15,
     lineHeight: 22,
     color: "#4b5563",
     textAlign: "center",
     maxWidth: 320,
+  },
+  subtitleCompact: {
+    fontSize: 14,
+    lineHeight: 20,
+    maxWidth: 300,
+  },
+  subtitleUltraCompact: {
+    fontSize: 13,
+    lineHeight: 18,
+    maxWidth: 286,
   },
   card: {
     backgroundColor: "#ffffff",
@@ -310,8 +387,20 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     elevation: 4,
   },
+  cardCompact: {
+    borderRadius: 24,
+    paddingHorizontal: 18,
+    paddingVertical: 20,
+  },
+  cardUltraCompact: {
+    borderRadius: 22,
+    paddingVertical: 16,
+  },
   previewButton: {
     marginBottom: 20,
+  },
+  previewButtonCompact: {
+    marginBottom: 14,
   },
   previewRing: {
     width: 168,
@@ -320,6 +409,16 @@ const styles = StyleSheet.create({
     padding: 6,
     justifyContent: "center",
     alignItems: "center",
+  },
+  previewRingCompact: {
+    width: 148,
+    height: 148,
+    borderRadius: 74,
+  },
+  previewRingUltraCompact: {
+    width: 132,
+    height: 132,
+    borderRadius: 66,
   },
   previewImage: {
     width: "100%",
@@ -350,12 +449,21 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     textAlign: "center",
   },
+  previewTitleCompact: {
+    fontSize: 18,
+    marginBottom: 4,
+  },
   previewSubtitle: {
     fontSize: 14,
     lineHeight: 20,
     color: "#6b7280",
     textAlign: "center",
     marginBottom: 18,
+  },
+  previewSubtitleCompact: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 14,
   },
   errorBanner: {
     width: "100%",
@@ -369,6 +477,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     marginBottom: 16,
+  },
+  errorBannerCompact: {
+    paddingVertical: 10,
+    marginBottom: 12,
   },
   errorText: {
     flex: 1,
@@ -385,6 +497,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 18,
     marginBottom: 10,
+  },
+  buttonCompact: {
+    minHeight: 48,
+    marginBottom: 8,
   },
   primaryButtonText: {
     color: "#ffffff",
@@ -403,6 +519,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     marginBottom: 8,
   },
+  secondaryButtonCompact: {
+    minHeight: 46,
+    marginBottom: 6,
+  },
   secondaryButtonText: {
     color: "#111827",
     fontSize: 15,
@@ -412,6 +532,10 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 10,
     marginTop: 2,
+  },
+  skipButtonCompact: {
+    paddingVertical: 10,
+    marginTop: 0,
   },
   skipButtonText: {
     color: "#6b7280",
@@ -424,6 +548,11 @@ const styles = StyleSheet.create({
     color: "#9ca3af",
     fontSize: 13,
     lineHeight: 18,
+  },
+  footnoteCompact: {
+    marginTop: 4,
+    fontSize: 12,
+    lineHeight: 16,
   },
   buttonDisabled: {
     opacity: 0.75,

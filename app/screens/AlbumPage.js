@@ -308,7 +308,6 @@ const DetailsTab = ({
   );
 };
 const TracksTab = ({ isFocused, trackList }) => {
-  const navigation = useNavigation();
   useEffect(() => {
     if (!isFocused) return;
   }, [isFocused]);
@@ -317,18 +316,9 @@ const TracksTab = ({ isFocused, trackList }) => {
     <View>
       <View>
         {trackList.map((item) => (
-          <TouchableOpacity
-            key={item.id}
-            onPress={() =>
-              navigation.push("MusicianPage", {
-                musician: item,
-                key: Math.round(Math.random() * 10000000),
-              })
-            }
-            style={{ marginVertical: 8 }} // Optional: spacing between items
-          >
+          <View key={item.id} style={{ marginVertical: 8 }}>
             <Text>{item.name}</Text>
-          </TouchableOpacity>
+          </View>
         ))}
       </View>
     </View>

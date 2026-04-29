@@ -1,4 +1,4 @@
-package com.anonymous.bsides
+package pro.bsides.app
 
 import android.app.Application
 import android.content.res.Configuration

@@ -20,14 +20,13 @@ import {
   reauthenticateWithCredential,
   signOut,
 } from "firebase/auth";
-import { deleteObject, ref } from "firebase/storage";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
 import { createMaterialTopTabNavigator } from "@react-navigation/material-top-tabs";
 import defaultProfileImage from "../../assets/defaultProfilePicture.png";
-import { auth, storage } from "../config/firebase";
+import { auth } from "../config/firebase";
 import { getProfileIdentity } from "../logic/profileIdentity";
 import { formatReviewScore } from "../logic/Review";
 import { getListByUID, getMyLikedLists, postList } from "../api/ListAPI";
@@ -116,6 +115,7 @@ const ProfileActionSheet = ({
   visible,
   onClose,
   onDeleteAccount,
+  onOpenLegalSupport,
   onSignOut,
   user,
 }) => {
@@ -136,6 +136,10 @@ const ProfileActionSheet = ({
           <Text style={styles.sheetSubtitle}>
             {user?.email || profileIdentity.handle || profileIdentity.title || "Manage your account"}
           </Text>
+          <Pressable style={styles.sheetSecondaryActionButton} onPress={onOpenLegalSupport}>
+            <Ionicons name="shield-checkmark-outline" size={20} color="#111827" />
+            <Text style={styles.sheetSecondaryActionText}>Privacy, safety & support</Text>
+          </Pressable>
           <Pressable style={styles.sheetSecondaryActionButton} onPress={onSignOut}>
             <Ionicons name="log-out-outline" size={20} color="#111827" />
             <Text style={styles.sheetSecondaryActionText}>Sign out</Text>
@@ -648,12 +652,6 @@ const ProfileTab = () => {
       );
       await reauthenticateWithCredential(currentUser, credential);
 
-      try {
-        await deleteObject(ref(storage, `profileImages/${currentUser.uid}`));
-      } catch (storageError) {
-        console.warn("Profile image cleanup failed:", storageError);
-      }
-
       await deleteCurrentUserAccount();
 
       try {
@@ -716,6 +714,11 @@ const ProfileTab = () => {
     navigation.navigate("LikedListsPage");
   }, [navigation]);
 
+  const openLegalSupport = useCallback(() => {
+    setActionModalVisible(false);
+    navigation.navigate("LegalSupport");
+  }, [navigation]);
+
   if (!user) {
     return (
       <SafeAreaProvider>
@@ -735,6 +738,7 @@ const ProfileTab = () => {
           visible={actionModalVisible}
           onClose={() => setActionModalVisible(false)}
           onDeleteAccount={openDeleteAccountModal}
+          onOpenLegalSupport={openLegalSupport}
           onSignOut={handleSignOut}
           user={user}
         />
@@ -839,6 +843,15 @@ const ProfileTab = () => {
                 countLabel={`${likedListsCount}`}
                 iconName="thumbs-up-outline"
                 onPress={openLikedLists}
+                integrated
+              />
+              <View style={styles.integratedEntryDivider} />
+              <ProfileEntryCard
+                title="Privacy & Support"
+                subtitle="Open the privacy policy, support page, and safety controls."
+                countLabel="Open"
+                iconName="shield-checkmark-outline"
+                onPress={openLegalSupport}
                 integrated
               />
             </View>
@@ -1484,6 +1497,11 @@ const styles = StyleSheet.create({
   profileEntryCountIntegrated: {
     color: "#111827",
   },
+  integratedEntryDivider: {
+    height: 1,
+    marginVertical: 14,
+    backgroundColor: "rgba(17, 24, 39, 0.08)",
+  },
   sheetRoot: {
     flex: 1,
     justifyContent: "flex-end",
@@ -1526,6 +1544,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 18,
     backgroundColor: "#f3f4f6",
+    marginTop: 10,
   },
   sheetSecondaryActionText: {
     fontSize: 16,

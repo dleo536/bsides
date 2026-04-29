@@ -23,6 +23,7 @@ import YearResults from "../screens/YearResults";
 import CountryPicker from "../screens/CountryPicker";
 import CountryResults from "../screens/CountryResults";
 import NewReleasesResults from "../screens/NewReleasesResults";
+import LegalSupportScreen from "../screens/LegalSupportScreen";
 const Tab = createBottomTabNavigator();
 
 const Stack = createStackNavigator();
@@ -261,6 +262,15 @@ function HomeStack() {
         component={UserPage}
         options={{
           ...detailBackButtonOptions,
+        }}
+      />
+      <Stack.Screen
+        name="LegalSupport"
+        component={LegalSupportScreen}
+        options={{
+          title: "Privacy, Safety & Support",
+          headerBackTitle: "Back",
+          headerBackTitleStyle: { fontSize: 10 },
         }}
       />
     </Stack.Navigator>

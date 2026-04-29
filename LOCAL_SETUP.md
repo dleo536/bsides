@@ -7,7 +7,8 @@
 Create a `.env` file in the root directory (`/Users/dannyleo/Workspace/b/b-sides/.env`) with:
 
 ```env
-REACT_NATIVE_API_URL=http://localhost:3000
+REACT_NATIVE_API_TARGET=local
+REACT_NATIVE_LOCAL_API_URL=http://localhost:3000
 ```
 
 **For physical devices (iPhone/Android phone):**
@@ -24,7 +25,8 @@ If you're testing on a physical device, you'll need to use your computer's IP ad
 
 2. Update `.env` with your IP:
    ```env
-   REACT_NATIVE_API_URL=http://192.168.1.XXX:3000
+   REACT_NATIVE_API_TARGET=local
+   REACT_NATIVE_LOCAL_API_URL=http://192.168.1.XXX:3000
    ```
    (Replace `XXX` with your actual IP address)
 
@@ -66,7 +68,8 @@ To switch back to the production API:
 
 1. Edit `.env`:
    ```env
-   REACT_NATIVE_API_URL=https://test1.bsidesdatapath.xyz
+   REACT_NATIVE_API_TARGET=production
+   REACT_NATIVE_PRODUCTION_API_URL=https://b-backend-50184648070.us-central1.run.app
    ```
 
 2. Restart Expo server:
@@ -95,10 +98,13 @@ To switch back to the production API:
 - Make sure you restarted the Expo server after creating/modifying `.env`
 - Try clearing the cache: `npm start -- --clear`
 - Check that `.env` is in the root directory (same level as `package.json`)
+- If you set `REACT_NATIVE_API_TARGET=local`, make sure `REACT_NATIVE_LOCAL_API_URL` is also set
 
 ### Still using production URL
 
-- Verify your `.env` file has the correct variable name: `REACT_NATIVE_API_URL`
+- Verify your `.env` file has the correct variable names:
+  - `REACT_NATIVE_API_TARGET=local`
+  - `REACT_NATIVE_LOCAL_API_URL=http://localhost:3000`
 - Make sure there are no extra spaces or quotes in the `.env` file
 - Restart Expo with cache cleared: `npm start -- --clear`
 
@@ -106,7 +112,7 @@ To switch back to the production API:
 
 - The `.env` file should be in `.gitignore` (don't commit it to git)
 - Different developers can have different `.env` files for their local setups
-- The default fallback (if `.env` is missing) is the production URL: `https://test1.bsidesdatapath.xyz`
-
+- If `.env` is missing, the app now defaults to the production API instead of localhost
+- Release builds now fail fast if they resolve to a local or private-network API URL
 
 

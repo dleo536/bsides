@@ -1,4 +1,4 @@
-package com.anonymous.bsides
+package pro.bsides.app
 
 import android.os.Build
 import android.os.Bundle
