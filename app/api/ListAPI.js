@@ -32,6 +32,16 @@ const generateSlug = (title) => {
     .replace(/^-+|-+$/g, "");
 };
 
+const normalizeListValue = (value) =>
+  typeof value === "string" ? value.trim().toLowerCase() : "";
+
+const isBacklogList = (list) => {
+  const normalizedTitle = normalizeListValue(list?.title || list?.listName);
+  const normalizedSlug = normalizeListValue(list?.slug);
+
+  return normalizedSlug === "backlog" || normalizedTitle === "backlog";
+};
+
 export const getAllLists = async (limit = 5, offset = 0, viewerUid = null) => {
   const fetchData = {
     method: "GET",
@@ -418,6 +428,41 @@ export const patchAlbumList = async (list, id) => {
   } catch (error) {
     console.error("Failed to update list");
   }
+};
+
+export const removeAlbumFromBacklog = async (uid, albumId) => {
+  const normalizedAlbumId =
+    typeof albumId === "string" ? albumId.trim() : "";
+
+  if (!uid || !normalizedAlbumId) {
+    return false;
+  }
+
+  const userLists = await getListByUID(uid);
+  const backlogList = Array.isArray(userLists)
+    ? userLists.find((list) => isBacklogList(list)) || null
+    : null;
+
+  if (!backlogList?.id) {
+    return false;
+  }
+
+  const existingAlbumIds = Array.isArray(backlogList.albumIds)
+    ? backlogList.albumIds
+    : Array.isArray(backlogList.albumList)
+    ? backlogList.albumList
+    : [];
+
+  const nextAlbumIds = existingAlbumIds.filter(
+    (currentAlbumId) => currentAlbumId !== normalizedAlbumId
+  );
+
+  if (nextAlbumIds.length === existingAlbumIds.length) {
+    return false;
+  }
+
+  await updateListAlbumOrder(backlogList.id, nextAlbumIds);
+  return true;
 };
 /**
  * Create a new list for the authenticated user.

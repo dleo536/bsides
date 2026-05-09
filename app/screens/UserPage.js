@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import {
   getAlbum,
   getAlbumsByName,
@@ -52,6 +52,81 @@ import {
 } from "../api/ModerationAPI";
 import ReportContentModal from "../components/ReportContentModal";
 import UserSafetySheet from "../components/UserSafetySheet";
+
+const BACKLOG_GRID_GAP = 10;
+const BACKLOG_GRID_PADDING = 16;
+const BACKLOG_TILE_SIZE =
+  (Dimensions.get("window").width - BACKLOG_GRID_PADDING * 2 - BACKLOG_GRID_GAP * 3) / 4;
+
+const normalizeListValue = (value) =>
+  typeof value === "string" ? value.trim().toLowerCase() : "";
+
+const isBacklogList = (list) => {
+  const normalizedTitle = normalizeListValue(list?.title || list?.listName);
+  const normalizedSlug = normalizeListValue(list?.slug);
+
+  return normalizedSlug === "backlog" || normalizedTitle === "backlog";
+};
+
+const findBacklogList = (lists) => {
+  if (!Array.isArray(lists)) {
+    return null;
+  }
+
+  return lists.find((list) => isBacklogList(list)) || null;
+};
+
+const toBacklogAlbumEntry = (albumId, albumData) => {
+  const artistNames =
+    Array.isArray(albumData?.artists) && albumData.artists.length > 0
+      ? albumData.artists.map((artist) => artist?.name).filter(Boolean).join(", ")
+      : "Unknown Artist";
+  const releaseYear =
+    typeof albumData?.release_date === "string" && albumData.release_date.length >= 4
+      ? albumData.release_date.slice(0, 4)
+      : null;
+
+  return {
+    id: albumData?.id || albumId,
+    spotifyId: albumId,
+    albumData: albumData || null,
+    title: albumData?.name || "Album unavailable",
+    artistNames,
+    releaseYear,
+    coverUrl: albumData?.images?.[0]?.url || null,
+  };
+};
+
+const BacklogAlbumTile = ({ album, onPress }) => (
+  <TouchableOpacity
+    style={styles.backlogAlbumTile}
+    onPress={onPress}
+    disabled={!album?.albumData}
+    activeOpacity={album?.albumData ? 0.84 : 1}
+  >
+    {album?.coverUrl ? (
+      <Image source={{ uri: album.coverUrl }} style={styles.backlogAlbumCover} />
+    ) : (
+      <View style={[styles.backlogAlbumCover, styles.backlogAlbumCoverFallback]}>
+        <Text style={styles.backlogAlbumCoverFallbackText}>
+          {(album?.title || "Album").slice(0, 1).toUpperCase()}
+        </Text>
+      </View>
+    )}
+    <View style={styles.backlogAlbumMetaWrap}>
+      <Text style={styles.backlogAlbumTitle} numberOfLines={1}>
+        {album?.title || "Untitled Album"}
+      </Text>
+      <Text style={styles.backlogAlbumArtist} numberOfLines={1}>
+        {album?.artistNames || "Unknown Artist"}
+      </Text>
+      {album?.releaseYear ? (
+        <Text style={styles.backlogAlbumMeta}>{album.releaseYear}</Text>
+      ) : null}
+    </View>
+  </TouchableOpacity>
+);
+
 const UserPage = () => {
   const windowWidth = Dimensions.get("window").width;
   const windowHeight = Dimensions.get("window").height;
@@ -65,6 +140,9 @@ const UserPage = () => {
   const [activeTab, setActiveTab] = useState("lists");
   const [lists, setLists] = useState([]);
   const [reviews, setReviews] = useState([]);
+  const [backlogAlbums, setBacklogAlbums] = useState([]);
+  const [backlogItemCount, setBacklogItemCount] = useState(0);
+  const [backlogLoading, setBacklogLoading] = useState(false);
   const [profileImage, setProfileImage] = useState("");
   const [followLoading, setFollowLoading] = useState(false);
   const [followStateLoading, setFollowStateLoading] = useState(false);
@@ -104,6 +182,10 @@ const UserPage = () => {
   const blockedByYou = Boolean(blockState?.blockedByYou);
   const blockedByUser = Boolean(blockState?.blockedByUser);
   const showSafetyMenu = Boolean(profileUserIdentifier && !isOwnProfile);
+  const visibleLists = useMemo(
+    () => (Array.isArray(lists) ? lists.filter((list) => !isBacklogList(list)) : []),
+    [lists]
+  );
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -186,6 +268,8 @@ const UserPage = () => {
       getLists();
     } else if (activeTab === "reviews") {
       getReviews();
+    } else if (activeTab === "backlog") {
+      getBacklogAlbums();
     }
   }, [activeTab, profileUserIdentifier]);
   useEffect(() => {
@@ -308,6 +392,51 @@ const UserPage = () => {
     setReviews(Array.isArray(userReviews) ? userReviews : []);
   };
 
+  const getBacklogAlbums = async () => {
+    if (!profileUserIdentifier) {
+      setBacklogAlbums([]);
+      setBacklogItemCount(0);
+      return;
+    }
+
+    setBacklogLoading(true);
+
+    try {
+      const userLists = await getListByUID(profileUserIdentifier);
+      const backlogList = findBacklogList(Array.isArray(userLists) ? userLists : []);
+      const backlogAlbumIds = Array.isArray(backlogList?.albumIds)
+        ? backlogList.albumIds.filter(Boolean)
+        : Array.isArray(backlogList?.albumList)
+        ? backlogList.albumList.filter(Boolean)
+        : [];
+
+      setBacklogItemCount(backlogAlbumIds.length);
+
+      if (backlogAlbumIds.length === 0) {
+        setBacklogAlbums([]);
+        return;
+      }
+
+      const results = await Promise.allSettled(
+        backlogAlbumIds.map((albumId) => getAlbum(albumId))
+      );
+      const nextAlbums = results.map((result, index) =>
+        toBacklogAlbumEntry(
+          backlogAlbumIds[index],
+          result.status === "fulfilled" ? result.value : null
+        )
+      );
+
+      setBacklogAlbums(nextAlbums);
+    } catch (error) {
+      console.error("Backlog fetch error:", error);
+      setBacklogAlbums([]);
+      setBacklogItemCount(0);
+    } finally {
+      setBacklogLoading(false);
+    }
+  };
+
   const refreshProfileUser = async () => {
     if (!profileUserIdentifier) {
       return null;
@@ -424,6 +553,8 @@ const UserPage = () => {
       if (response?.blocked) {
         setLists([]);
         setReviews([]);
+        setBacklogAlbums([]);
+        setBacklogItemCount(0);
         Alert.alert(
           "User blocked",
           "You will no longer see this user's profile, reviews, or lists in your feeds."
@@ -605,17 +736,17 @@ const UserPage = () => {
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            onPress={() => setActiveTab("activity")}
+            onPress={() => setActiveTab("backlog")}
             style={styles.tabButton}
           >
             <Text
               style={
-                activeTab === "activity"
+                activeTab === "backlog"
                   ? styles.activeTabText
                   : styles.inactiveTabText
               }
             >
-              Activity
+              Backlog
             </Text>
           </TouchableOpacity>
         </View>
@@ -628,10 +759,10 @@ const UserPage = () => {
 
               {!Array.isArray(lists) ? (
                 <Text style={styles.emptyText}>Loading lists...</Text>
-              ) : lists.length === 0 ? (
+              ) : visibleLists.length === 0 ? (
                 <Text style={styles.emptyText}>No lists yet.</Text>
               ) : (
-                lists.map((list) => (
+                visibleLists.map((list) => (
                   <ListElement
                     key={list.id}
                     list={list}
@@ -662,20 +793,40 @@ const UserPage = () => {
             </View>
           )}
 
-          {activeTab === "activity" && (
+          {activeTab === "backlog" && (
             <View>
-              <Text style={styles.sectionTitle}>Want to Listen</Text>
-              {/* {user.want_to_listen.length === 0 ? (
-                <Text style={styles.emptyText}>
-                  No albums in Want to Listen yet.
-                </Text>
-              ) : (
-                user.want_to_listen.map((album, index) => (
-                  <Text key={index} style={styles.itemText}>
-                    {album}
+              <View style={styles.backlogSectionHeader}>
+                <Text style={styles.sectionTitle}>Backlog</Text>
+                <View style={styles.backlogCountPill}>
+                  <Text style={styles.backlogCountPillText}>
+                    {backlogItemCount} album{backlogItemCount === 1 ? "" : "s"}
                   </Text>
-                ))
-              )} */}
+                </View>
+              </View>
+              {backlogLoading ? (
+                <ActivityIndicator style={styles.loader} />
+              ) : backlogAlbums.length === 0 ? (
+                <View style={styles.backlogEmptyState}>
+                  <Text style={styles.backlogEmptyTitle}>Backlog is empty.</Text>
+                  <Text style={styles.backlogEmptyBody}>
+                    This user has not added any albums to their backlog.
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.backlogGrid}>
+                  {backlogAlbums.map((album, index) => (
+                    <BacklogAlbumTile
+                      key={album?.id?.toString?.() || album?.spotifyId || `backlog-album-${index}`}
+                      album={album}
+                      onPress={() =>
+                        album?.albumData
+                          ? navigation.push("AlbumPage", { album: album.albumData })
+                          : null
+                      }
+                    />
+                  ))}
+                </View>
+              )}
             </View>
           )}
         </View>
@@ -764,9 +915,89 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "gray",
   },
+  loader: {
+    marginVertical: 12,
+  },
   itemText: {
     fontSize: 16,
     paddingVertical: 6,
+  },
+  backlogSectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  backlogCountPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "#f3f4f6",
+  },
+  backlogCountPillText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#4b5563",
+  },
+  backlogGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: BACKLOG_GRID_GAP,
+  },
+  backlogEmptyState: {
+    alignItems: "center",
+    paddingTop: 32,
+    paddingHorizontal: 28,
+  },
+  backlogEmptyTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  backlogEmptyBody: {
+    marginTop: 8,
+    fontSize: 14,
+    lineHeight: 20,
+    color: "#6b7280",
+    textAlign: "center",
+  },
+  backlogAlbumTile: {
+    width: BACKLOG_TILE_SIZE,
+    marginBottom: 18,
+  },
+  backlogAlbumCover: {
+    width: BACKLOG_TILE_SIZE,
+    height: BACKLOG_TILE_SIZE,
+    borderRadius: 8,
+    backgroundColor: "#e5e7eb",
+  },
+  backlogAlbumCoverFallback: {
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  backlogAlbumCoverFallbackText: {
+    fontSize: 24,
+    fontWeight: "800",
+    color: "#4b5563",
+  },
+  backlogAlbumMetaWrap: {
+    paddingTop: 8,
+  },
+  backlogAlbumTitle: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#111827",
+    lineHeight: 14,
+  },
+  backlogAlbumArtist: {
+    marginTop: 2,
+    fontSize: 10,
+    color: "#6b7280",
+  },
+  backlogAlbumMeta: {
+    marginTop: 3,
+    fontSize: 10,
+    color: "#9ca3af",
   },
   followButton: {
     paddingVertical: 8,

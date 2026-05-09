@@ -190,8 +190,6 @@ const SearchPage = () => {
   };
 
   const navigateToYearPicker = () => navigation.push("YearPicker");
-  const navigateToCountryPicker = () => navigation.push("CountryPicker");
-
   const renderNewReleaseCard = ({ item }) => (
     <TouchableOpacity
       style={styles.newReleaseCard}
@@ -347,13 +345,6 @@ const SearchPage = () => {
                   <TouchableOpacity style={styles.browseTile} onPress={navigateToYearPicker}>
                     <Text style={styles.browseTileTitle}>Year</Text>
                     <Text style={styles.browseTileSubtitle}>Browse by release year</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.browseTile}
-                    onPress={navigateToCountryPicker}
-                  >
-                    <Text style={styles.browseTileTitle}>Location</Text>
-                    <Text style={styles.browseTileSubtitle}>New in each country</Text>
                   </TouchableOpacity>
                 </View>
 

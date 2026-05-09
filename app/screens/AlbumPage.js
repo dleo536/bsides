@@ -34,7 +34,12 @@ import { auth } from "../config/firebase";
 import { LinearGradient } from "expo-linear-gradient";
 import { postReview } from "../api/ReviewAPI";
 import { Review } from "../logic/Review";
-import { getListByUID, patchAlbumList, postList } from "../api/ListAPI";
+import {
+  getListByUID,
+  patchAlbumList,
+  postList,
+  removeAlbumFromBacklog,
+} from "../api/ListAPI";
 import {
   SafeAreaProvider,
   SafeAreaView,
@@ -465,11 +470,23 @@ const AlbumPage = (route) => {
 
   useLayoutEffect(() => {
     navigation.setOptions({
-      headerTitle: albumData.name, // top header text
+      headerTitle: () => (
+        <Text
+          style={styles.navigationHeaderTitle}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+        >
+          {albumData?.name || "Album"}
+        </Text>
+      ),
+      headerTitleAlign: "center",
+      headerTitleContainerStyle: styles.navigationHeaderTitleContainer,
+      headerLeftContainerStyle: styles.navigationHeaderLeftContainer,
+      headerRightContainerStyle: styles.navigationHeaderRightContainer,
       headerRight: () => (
         <TouchableOpacity
           onPress={() => setActionModalVisible(true)}
-          style={{ marginRight: 10 }}
+          style={styles.headerActionButton}
         >
           <Ionicons name="ellipsis-horizontal-outline" size={24} />
         </TouchableOpacity> // bottom tab label
@@ -598,6 +615,13 @@ const AlbumPage = (route) => {
       if (reviewResult?.error) {
         throw new Error("Review creation failed");
       }
+
+      try {
+        await removeAlbumFromBacklog(firebaseUid, albumData.id);
+      } catch (backlogRemovalError) {
+        console.error("Failed to remove reviewed album from backlog");
+      }
+
       closeReviewComposer();
     } catch (error) {
       console.error("Failed to submit review");
@@ -697,14 +721,14 @@ const AlbumPage = (route) => {
                 <Image source={albumData.images[0]} style={styles.image} />
               )}
               <View style={styles.columnContainer}>
-                <Text style={{ padding: 5 }}>
+                <Text style={styles.albumTitleText}>
                   {albumData.name || "Unknown Album"}
                 </Text>
-                <Text style={{ padding: 5 }}>
+                <Text style={styles.albumMetaText}>
                   {formatDate(albumData.release_date)}
                 </Text>
                 {albumData.artists?.[0] && (
-                  <Text style={{ padding: 5 }}>
+                  <Text style={styles.albumMetaText}>
                     {albumData.artists[0].name}
                   </Text>
                 )}
@@ -1570,8 +1594,55 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   image: { width: 150, height: 150, borderRadius: 3 },
   gradient: { position: "absolute", zIndex: 1 },
-  pageData: { flexDirection: "row", paddingTop: "50%", zIndex: 2 },
-  columnContainer: { paddingHorizontal: 20, paddingVertical: 20 },
+  pageData: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    paddingTop: "50%",
+    paddingHorizontal: 16,
+    zIndex: 2,
+  },
+  columnContainer: {
+    flex: 1,
+    minWidth: 0,
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+  },
+  navigationHeaderTitle: {
+    fontSize: 17,
+    fontWeight: "600",
+    color: "#111827",
+    textAlign: "center",
+  },
+  navigationHeaderTitleContainer: {
+    left: 56,
+    right: 56,
+  },
+  navigationHeaderLeftContainer: {
+    paddingLeft: 4,
+  },
+  navigationHeaderRightContainer: {
+    paddingRight: 6,
+  },
+  headerActionButton: {
+    marginRight: 4,
+    padding: 4,
+  },
+  albumTitleText: {
+    padding: 5,
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: "700",
+    color: "#111827",
+    flexShrink: 1,
+    width: "100%",
+  },
+  albumMetaText: {
+    padding: 5,
+    fontSize: 15,
+    lineHeight: 21,
+    color: "#4b5563",
+    width: "100%",
+  },
   centeredView: { 
     flex: 1, 
     justifyContent: "center", 

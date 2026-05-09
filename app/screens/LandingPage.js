@@ -20,7 +20,10 @@ import heroFallbackImage from "../../assets/ChatGPT Image Apr 2, 2025, 09_32_29 
 import logoImage from "../../assets/Color logo - no background.png";
 import LegalAccessLink from "../components/LegalAccessLink";
 
-const heroVideo = require("../../assets/landing-bg.mp4");
+const heroVideo = Platform.select({
+  ios: require("../../assets/landing-bg-alpha.mov"),
+  default: require("../../assets/landing-bg.mp4"),
+});
 
 function HeroMediaOverlay() {
   return (
@@ -40,7 +43,6 @@ function StaticHeroMedia() {
         style={[StyleSheet.absoluteFill, styles.heroFallbackImage]}
         resizeMode="contain"
       />
-      <HeroMediaOverlay />
     </>
   );
 }
@@ -80,14 +82,13 @@ function VideoHeroMedia() {
       ) : null}
       <VideoView
         player={player}
-        style={StyleSheet.absoluteFill}
+        style={[StyleSheet.absoluteFill, styles.heroVideo]}
         nativeControls={false}
         contentFit="contain"
         allowsFullscreen={false}
         allowsPictureInPicture={false}
         onFirstFrameRender={() => setDidRenderFirstFrame(true)}
       />
-      <HeroMediaOverlay />
     </>
   );
 }
@@ -349,19 +350,14 @@ const styles = StyleSheet.create({
   },
   heroMediaShell: {
     alignSelf: "center",
-    borderRadius: 28,
-    backgroundColor: "#e5e7eb",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.72)",
+    backgroundColor: "transparent",
     overflow: "hidden",
-    shadowColor: "#111827",
-    shadowOpacity: 0.16,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 16 },
-    elevation: 8,
   },
   heroFallbackImage: {
     opacity: 1,
+  },
+  heroVideo: {
+    backgroundColor: "transparent",
   },
   heroMediaOverlay: {
     flex: 1,
