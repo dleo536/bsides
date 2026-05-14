@@ -32,7 +32,10 @@ import { formatReviewScore } from "../logic/Review";
 import { getListByUID, getMyLikedLists, postList } from "../api/ListAPI";
 import { getReviewsByUID } from "../api/ReviewAPI";
 import { getAlbum } from "../api/SpotifyAPI";
-import { deleteCurrentUserAccount } from "../api/UserAPI";
+import {
+  changeCurrentUserPassword,
+  deleteCurrentUserAccount,
+} from "../api/UserAPI";
 import ListElement from "../components/listElement";
 
 const Tab = createMaterialTopTabNavigator();
@@ -81,6 +84,29 @@ const findBacklogList = (lists) => {
   return lists.find((list) => isBacklogList(list)) || null;
 };
 
+const getPasswordRules = (password) => [
+  {
+    key: "length",
+    label: "At least 8 characters",
+    met: password.length >= 8,
+  },
+  {
+    key: "uppercase",
+    label: "1 uppercase letter",
+    met: /[A-Z]/.test(password),
+  },
+  {
+    key: "lowercase",
+    label: "1 lowercase letter",
+    met: /[a-z]/.test(password),
+  },
+  {
+    key: "number",
+    label: "1 number",
+    met: /\d/.test(password),
+  },
+];
+
 const formatJoinLabel = (creationTime) => {
   if (!creationTime) {
     return "Member";
@@ -112,6 +138,7 @@ const formatHistoryDate = (value) => {
 };
 
 const ProfileActionSheet = ({
+  onChangePassword,
   visible,
   onClose,
   onDeleteAccount,
@@ -139,6 +166,10 @@ const ProfileActionSheet = ({
           <Pressable style={styles.sheetSecondaryActionButton} onPress={onOpenLegalSupport}>
             <Ionicons name="shield-checkmark-outline" size={20} color="#111827" />
             <Text style={styles.sheetSecondaryActionText}>Privacy, safety & support</Text>
+          </Pressable>
+          <Pressable style={styles.sheetSecondaryActionButton} onPress={onChangePassword}>
+            <Ionicons name="key-outline" size={20} color="#111827" />
+            <Text style={styles.sheetSecondaryActionText}>Change password</Text>
           </Pressable>
           <Pressable style={styles.sheetSecondaryActionButton} onPress={onSignOut}>
             <Ionicons name="log-out-outline" size={20} color="#111827" />
@@ -240,6 +271,163 @@ const DeleteAccountModal = ({
     </View>
   </Modal>
 );
+
+const ChangePasswordModal = ({
+  confirmPassword,
+  currentPassword,
+  errorMessage,
+  isSubmitting,
+  newPassword,
+  onClose,
+  onConfirmPasswordChange,
+  onCurrentPasswordChange,
+  onNewPasswordChange,
+  onSave,
+  successMessage,
+  visible,
+}) => {
+  const passwordRules = getPasswordRules(newPassword);
+
+  return (
+    <Modal
+      animationType="fade"
+      transparent
+      visible={visible}
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalBackdrop}>
+        <View style={styles.changePasswordModalView}>
+          <View style={styles.changePasswordHeaderRow}>
+            <View style={styles.changePasswordHeaderCopy}>
+              <Text style={styles.changePasswordTitle}>Change password</Text>
+              <Text style={styles.changePasswordSubtitle}>
+                Update the password linked to your account.
+              </Text>
+            </View>
+            <Pressable
+              onPress={onClose}
+              disabled={isSubmitting}
+              style={styles.changePasswordCloseButton}
+            >
+              <Ionicons name="close" size={20} color="#111827" />
+            </Pressable>
+          </View>
+
+          <View style={styles.changePasswordFieldGroup}>
+            <Text style={styles.changePasswordFieldLabel}>Current password</Text>
+            <TextInput
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!isSubmitting}
+              onChangeText={onCurrentPasswordChange}
+              placeholder="Enter your current password"
+              placeholderTextColor="#9ca3af"
+              secureTextEntry
+              style={styles.changePasswordInput}
+              textContentType="password"
+              value={currentPassword}
+            />
+          </View>
+
+          <View style={styles.changePasswordFieldGroup}>
+            <Text style={styles.changePasswordFieldLabel}>New password</Text>
+            <TextInput
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!isSubmitting}
+              onChangeText={onNewPasswordChange}
+              placeholder="Create a new password"
+              placeholderTextColor="#9ca3af"
+              secureTextEntry
+              style={styles.changePasswordInput}
+              textContentType="newPassword"
+              value={newPassword}
+            />
+          </View>
+
+          <View style={styles.changePasswordFieldGroup}>
+            <Text style={styles.changePasswordFieldLabel}>Confirm new password</Text>
+            <TextInput
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!isSubmitting}
+              onChangeText={onConfirmPasswordChange}
+              placeholder="Re-enter the new password"
+              placeholderTextColor="#9ca3af"
+              secureTextEntry
+              style={styles.changePasswordInput}
+              textContentType="newPassword"
+              value={confirmPassword}
+            />
+          </View>
+
+          <View style={styles.changePasswordRules}>
+            {passwordRules.map((rule) => (
+              <View key={rule.key} style={styles.changePasswordRuleRow}>
+                <Ionicons
+                  name={rule.met ? "checkmark-circle" : "ellipse-outline"}
+                  size={16}
+                  color={rule.met ? "#166534" : "#9ca3af"}
+                />
+                <Text
+                  style={[
+                    styles.changePasswordRuleText,
+                    rule.met && styles.changePasswordRuleTextMet,
+                  ]}
+                >
+                  {rule.label}
+                </Text>
+              </View>
+            ))}
+          </View>
+
+          {errorMessage ? (
+            <View style={styles.changePasswordErrorBanner}>
+              <Ionicons name="alert-circle" size={18} color="#b91c1c" />
+              <Text style={styles.changePasswordErrorText}>{errorMessage}</Text>
+            </View>
+          ) : null}
+
+          {successMessage ? (
+            <View style={styles.changePasswordSuccessBanner}>
+              <Ionicons name="checkmark-circle" size={18} color="#166534" />
+              <Text style={styles.changePasswordSuccessText}>{successMessage}</Text>
+            </View>
+          ) : null}
+
+          <View style={styles.changePasswordFooter}>
+            <Pressable
+              disabled={isSubmitting}
+              onPress={onClose}
+              style={[
+                styles.changePasswordFooterButton,
+                styles.changePasswordFooterButtonSecondary,
+                isSubmitting && styles.modalButtonDisabled,
+              ]}
+            >
+              <Text style={styles.changePasswordFooterButtonSecondaryText}>Close</Text>
+            </Pressable>
+            <Pressable
+              disabled={isSubmitting}
+              onPress={onSave}
+              style={[
+                styles.changePasswordFooterButton,
+                styles.changePasswordFooterButtonPrimary,
+                isSubmitting && styles.modalButtonDisabled,
+              ]}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator size="small" color="#ffffff" />
+              ) : (
+                <Text style={styles.changePasswordFooterButtonPrimaryText}>Save</Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+};
 
 const TopAlbumCard = ({ album, index }) => {
   const artistNames =
@@ -455,6 +643,13 @@ const ProfileTab = () => {
   const [topAlbumsLoading, setTopAlbumsLoading] = useState(false);
   const [profileDataLoading, setProfileDataLoading] = useState(true);
   const [actionModalVisible, setActionModalVisible] = useState(false);
+  const [changePasswordModalVisible, setChangePasswordModalVisible] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [changePasswordError, setChangePasswordError] = useState("");
+  const [changePasswordSuccess, setChangePasswordSuccess] = useState("");
+  const [changePasswordSubmitting, setChangePasswordSubmitting] = useState(false);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [deletePassword, setDeletePassword] = useState("");
   const [deleteAccountError, setDeleteAccountError] = useState("");
@@ -473,11 +668,30 @@ const ProfileTab = () => {
     () => formatJoinLabel(user?.metadata?.creationTime),
     [user?.metadata?.creationTime]
   );
+  const supportsPasswordChange = useMemo(
+    () =>
+      Boolean(
+        user?.email &&
+          auth.currentUser?.providerData?.some(
+            (provider) => provider?.providerId === "password"
+          )
+      ),
+    [user?.email, user?.providerData]
+  );
 
   const resetDeleteAccountState = useCallback(() => {
     setDeletePassword("");
     setDeleteAccountError("");
     setDeleteAccountSubmitting(false);
+  }, []);
+
+  const resetChangePasswordState = useCallback(() => {
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setChangePasswordError("");
+    setChangePasswordSuccess("");
+    setChangePasswordSubmitting(false);
   }, []);
 
   const loadTopAlbums = useCallback(async (resolvedLists) => {
@@ -585,10 +799,19 @@ const ProfileTab = () => {
 
       return () => {
         setActionModalVisible(false);
+        setChangePasswordModalVisible(false);
         setDeleteModalVisible(false);
+        resetChangePasswordState();
         resetDeleteAccountState();
       };
-    }, [loadProfileData, navigation, profileIdentity.handle, profileIdentity.title, resetDeleteAccountState])
+    }, [
+      loadProfileData,
+      navigation,
+      profileIdentity.handle,
+      profileIdentity.title,
+      resetChangePasswordState,
+      resetDeleteAccountState,
+    ])
   );
 
   const handleSignOut = useCallback(() => {
@@ -607,6 +830,21 @@ const ProfileTab = () => {
     resetDeleteAccountState();
     setDeleteModalVisible(true);
   }, [resetDeleteAccountState]);
+
+  const openChangePasswordModal = useCallback(() => {
+    setActionModalVisible(false);
+    resetChangePasswordState();
+    setChangePasswordModalVisible(true);
+  }, [resetChangePasswordState]);
+
+  const closeChangePasswordModal = useCallback(() => {
+    if (changePasswordSubmitting) {
+      return;
+    }
+
+    setChangePasswordModalVisible(false);
+    resetChangePasswordState();
+  }, [changePasswordSubmitting, resetChangePasswordState]);
 
   const closeDeleteAccountModal = useCallback(() => {
     if (deleteAccountSubmitting) {
@@ -692,6 +930,97 @@ const ProfileTab = () => {
     resetDeleteAccountState,
   ]);
 
+  const handleChangePassword = useCallback(async () => {
+    if (changePasswordSubmitting) {
+      return;
+    }
+
+    const currentUser = auth.currentUser;
+
+    if (!currentUser?.uid) {
+      setChangePasswordError("Your session expired. Please sign in again.");
+      return;
+    }
+
+    if (!currentUser.email || !supportsPasswordChange) {
+      setChangePasswordError(
+        "Password changes are only available for email and password accounts."
+      );
+      return;
+    }
+
+    if (!currentPassword) {
+      setChangePasswordError("Enter your current password.");
+      return;
+    }
+
+    if (!newPassword) {
+      setChangePasswordError("Enter a new password.");
+      return;
+    }
+
+    if (getPasswordRules(newPassword).some((rule) => !rule.met)) {
+      setChangePasswordError("Password does not meet the required rules.");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setChangePasswordError("New password and confirmation do not match.");
+      return;
+    }
+
+    if (currentPassword === newPassword) {
+      setChangePasswordError("Choose a new password that is different from the current one.");
+      return;
+    }
+
+    setChangePasswordSubmitting(true);
+    setChangePasswordError("");
+    setChangePasswordSuccess("");
+
+    try {
+      const credential = EmailAuthProvider.credential(
+        currentUser.email,
+        currentPassword
+      );
+      await reauthenticateWithCredential(currentUser, credential);
+      await changeCurrentUserPassword(newPassword);
+      await currentUser.reload();
+      setUser({ ...auth.currentUser });
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setChangePasswordSuccess("Password updated successfully.");
+    } catch (error) {
+      const errorCode = error?.code || "";
+      const backendMessage = error?.payload?.message || error?.message || "";
+
+      if (
+        errorCode === "auth/invalid-credential" ||
+        errorCode === "auth/invalid-login-credentials" ||
+        errorCode === "auth/wrong-password"
+      ) {
+        setChangePasswordError("The current password you entered is incorrect.");
+      } else if (errorCode === "auth/too-many-requests") {
+        setChangePasswordError("Too many attempts. Please wait a moment and try again.");
+      } else if (errorCode === "auth/network-request-failed") {
+        setChangePasswordError("Could not reach the server. Check your connection and try again.");
+      } else if (typeof backendMessage === "string" && backendMessage.trim()) {
+        setChangePasswordError(backendMessage.trim());
+      } else {
+        setChangePasswordError("Could not update your password right now. Please try again.");
+      }
+    } finally {
+      setChangePasswordSubmitting(false);
+    }
+  }, [
+    changePasswordSubmitting,
+    confirmPassword,
+    currentPassword,
+    newPassword,
+    supportsPasswordChange,
+  ]);
+
   const onRefresh = useCallback(async () => {
     if (!auth.currentUser) {
       return;
@@ -735,12 +1064,51 @@ const ProfileTab = () => {
     <SafeAreaProvider>
       <SafeAreaView style={styles.profileScreen}>
         <ProfileActionSheet
+          onChangePassword={openChangePasswordModal}
           visible={actionModalVisible}
           onClose={() => setActionModalVisible(false)}
           onDeleteAccount={openDeleteAccountModal}
           onOpenLegalSupport={openLegalSupport}
           onSignOut={handleSignOut}
           user={user}
+        />
+        <ChangePasswordModal
+          confirmPassword={confirmPassword}
+          currentPassword={currentPassword}
+          errorMessage={changePasswordError}
+          isSubmitting={changePasswordSubmitting}
+          newPassword={newPassword}
+          onClose={closeChangePasswordModal}
+          onConfirmPasswordChange={(value) => {
+            setConfirmPassword(value);
+            if (changePasswordError) {
+              setChangePasswordError("");
+            }
+            if (changePasswordSuccess) {
+              setChangePasswordSuccess("");
+            }
+          }}
+          onCurrentPasswordChange={(value) => {
+            setCurrentPassword(value);
+            if (changePasswordError) {
+              setChangePasswordError("");
+            }
+            if (changePasswordSuccess) {
+              setChangePasswordSuccess("");
+            }
+          }}
+          onNewPasswordChange={(value) => {
+            setNewPassword(value);
+            if (changePasswordError) {
+              setChangePasswordError("");
+            }
+            if (changePasswordSuccess) {
+              setChangePasswordSuccess("");
+            }
+          }}
+          onSave={handleChangePassword}
+          successMessage={changePasswordSuccess}
+          visible={changePasswordModalVisible}
         />
         <DeleteAccountModal
           errorMessage={deleteAccountError}
@@ -1611,6 +1979,150 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 10,
     elevation: 5,
+  },
+  changePasswordModalView: {
+    width: "100%",
+    backgroundColor: "#4f6277",
+    borderRadius: 24,
+    padding: 24,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  changePasswordHeaderRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  changePasswordHeaderCopy: {
+    flex: 1,
+  },
+  changePasswordTitle: {
+    fontSize: 26,
+    fontWeight: "800",
+    color: "#ffffff",
+  },
+  changePasswordSubtitle: {
+    marginTop: 6,
+    fontSize: 14,
+    lineHeight: 20,
+    color: "rgba(226, 232, 240, 0.92)",
+  },
+  changePasswordCloseButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.14)",
+  },
+  changePasswordFieldGroup: {
+    marginTop: 16,
+  },
+  changePasswordFieldLabel: {
+    marginBottom: 8,
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#e2e8f0",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  changePasswordInput: {
+    width: "100%",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(226, 232, 240, 0.18)",
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    borderRadius: 14,
+    color: "#ffffff",
+    fontSize: 16,
+  },
+  changePasswordRules: {
+    marginTop: 16,
+    gap: 8,
+  },
+  changePasswordRuleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  changePasswordRuleText: {
+    fontSize: 13,
+    color: "#cbd5e1",
+  },
+  changePasswordRuleTextMet: {
+    color: "#dcfce7",
+  },
+  changePasswordErrorBanner: {
+    marginTop: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderRadius: 16,
+    backgroundColor: "#fef2f2",
+    borderWidth: 1,
+    borderColor: "#fecaca",
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  changePasswordErrorText: {
+    flex: 1,
+    color: "#b91c1c",
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  changePasswordSuccessBanner: {
+    marginTop: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderRadius: 16,
+    backgroundColor: "#f0fdf4",
+    borderWidth: 1,
+    borderColor: "#bbf7d0",
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  changePasswordSuccessText: {
+    flex: 1,
+    color: "#166534",
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  changePasswordFooter: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 20,
+  },
+  changePasswordFooterButton: {
+    flex: 1,
+    minHeight: 52,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  changePasswordFooterButtonPrimary: {
+    backgroundColor: "#111827",
+  },
+  changePasswordFooterButtonPrimaryText: {
+    color: "#ffffff",
+    fontWeight: "700",
+  },
+  changePasswordFooterButtonSecondary: {
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(226, 232, 240, 0.16)",
+  },
+  changePasswordFooterButtonSecondaryText: {
+    color: "#ffffff",
+    fontWeight: "700",
   },
   deleteModalWarningPill: {
     alignSelf: "flex-start",

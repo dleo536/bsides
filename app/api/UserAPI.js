@@ -386,6 +386,38 @@ export const deleteCurrentUserAccount = async () => {
   }
 };
 
+export const changeCurrentUserPassword = async (newPassword) => {
+  try {
+    const response = await apiFetch(
+      "/users/me/change-password",
+      {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          newPassword,
+        }),
+      },
+      { authRequired: true }
+    );
+    const data = await parseJsonSafely(response, "POST /users/me/change-password");
+
+    if (!response.ok) {
+      const error = new Error(data?.message || "Could not update your password");
+      error.status = response.status;
+      error.payload = data;
+      throw error;
+    }
+
+    return data;
+  } catch (error) {
+    console.error("Failed to change current user password");
+    throw error;
+  }
+};
+
 export const updateCurrentUserProfile = async (updates = {}) => {
   try {
     const response = await apiFetch("/users/me", {
