@@ -11,6 +11,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { auth } from "../config/firebase";
 import {
   createUserWithEmailAndPassword,
@@ -25,6 +26,11 @@ import {
   getSignupAvailability,
 } from "../api/UserAPI";
 import LegalAccessLink from "../components/LegalAccessLink";
+import {
+  clearSignupOnboardingState,
+  getPostAuthRouteForUser,
+  setSignupOnboardingState,
+} from "../logic/onboardingFlow";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const USERNAME_REGEX = /^[A-Za-z0-9._]+$/;
@@ -98,6 +104,7 @@ export default function SignUpScreen() {
     password: false,
     username: false,
   });
+  const [focusedField, setFocusedField] = useState(null);
   const [emailError, setEmailError] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [usernameError, setUsernameError] = useState("");
@@ -120,13 +127,28 @@ export default function SignUpScreen() {
   const normalizedUsername = username.trim();
 
   useEffect(() => {
+    let cancelled = false;
+
     const unsubscribe = auth.onAuthStateChanged((user) => {
       if (user && !isSubmitting) {
-        navigation.replace("Profile Picture");
+        getPostAuthRouteForUser(user)
+          .then((routeName) => {
+            if (!cancelled) {
+              navigation.replace(routeName);
+            }
+          })
+          .catch(() => {
+            if (!cancelled) {
+              navigation.replace("User Details");
+            }
+          });
       }
     });
 
-    return unsubscribe;
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [isSubmitting, navigation]);
 
   useEffect(() => {
@@ -335,6 +357,7 @@ export default function SignUpScreen() {
         password
       );
       const localUser = credential.user;
+      await setSignupOnboardingState(localUser.uid, "user-details");
 
       await updateProfile(localUser, {
         displayName: normalizedUsername,
@@ -347,6 +370,7 @@ export default function SignUpScreen() {
         });
       } catch (backendError) {
         try {
+          await clearSignupOnboardingState();
           await deleteUser(localUser);
         } catch (cleanupError) {
           console.error("Failed to delete Firebase user after signup error:", cleanupError);
@@ -369,7 +393,7 @@ export default function SignUpScreen() {
         console.error("Failed to create favorites list:", error);
       }
 
-      navigation.replace("Profile Picture");
+      navigation.replace("User Details");
     } catch (error) {
       handleFirebaseError(error);
     } finally {
@@ -389,9 +413,10 @@ export default function SignUpScreen() {
     normalizedUsername &&
     !usernameError &&
     usernameAvailability.status === "available";
+  const shouldShowPasswordRules = focusedField === "password" || !ultraCompactLayout;
 
   return (
-    <View style={styles.screen}>
+    <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
       <KeyboardAvoidingView
         style={styles.flex}
@@ -417,13 +442,13 @@ export default function SignUpScreen() {
                 compactLayout && styles.brandCompact,
                 ultraCompactLayout && styles.brandUltraCompact,
               ]}
-            >
-              b.sides
-            </Text>
-            <Text style={[styles.title, compactLayout && styles.titleCompact]}>
-              Create your account
-            </Text>
+          >
+            b.sides
+          </Text>
+          <View style={styles.stepBadge}>
+            <Text style={styles.stepBadgeText}>Step 1 of 3</Text>
           </View>
+        </View>
 
           <View
             style={[
@@ -489,71 +514,6 @@ export default function SignUpScreen() {
 
             <View style={[styles.fieldGroup, compactLayout && styles.fieldGroupCompact]}>
               <View style={styles.fieldHeader}>
-                <Text style={styles.label}>Password</Text>
-                {isPasswordValid ? (
-                  <View style={styles.successBadge}>
-                    <Ionicons name="checkmark-circle" size={16} color="#15803d" />
-                    <Text style={styles.successBadgeText}>Strong</Text>
-                  </View>
-                ) : null}
-              </View>
-              <TextInput
-                placeholder="Create a password"
-                value={password}
-                onChangeText={handlePasswordChange}
-                onBlur={() => {
-                  setFieldTouched("password");
-                  setPasswordError(
-                    passwordRules.every((rule) => rule.met)
-                      ? ""
-                      : "Password does not meet the required rules."
-                  );
-                }}
-                style={[
-                  styles.input,
-                  compactLayout && styles.inputCompact,
-                  getInputStateStyle({
-                    hasError: showPasswordError,
-                    isValid: touched.password && isPasswordValid,
-                  }),
-                ]}
-                secureTextEntry
-                textContentType="newPassword"
-                autoCapitalize="none"
-                autoCorrect={false}
-                placeholderTextColor="#9ca3af"
-              />
-              <View style={[styles.rulesCard, compactLayout && styles.rulesCardCompact]}>
-                {passwordRules.map((rule) => (
-                  <View key={rule.key} style={styles.ruleRow}>
-                    <Ionicons
-                      name={rule.met ? "checkmark-circle" : "ellipse-outline"}
-                      size={18}
-                      color={rule.met ? "#15803d" : "#94a3b8"}
-                    />
-                    <Text
-                      style={[
-                        styles.ruleText,
-                        compactLayout && styles.ruleTextCompact,
-                        rule.met ? styles.ruleTextMet : null,
-                      ]}
-                    >
-                      {rule.label}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-              {showPasswordError ? (
-                <Text style={styles.errorText}>{passwordError}</Text>
-              ) : (
-                <Text style={[styles.helperText, compactLayout && styles.helperTextCompact]}>
-                  Use a password you have not used elsewhere.
-                </Text>
-              )}
-            </View>
-
-            <View style={[styles.fieldGroup, compactLayout && styles.fieldGroupCompact]}>
-              <View style={styles.fieldHeader}>
                 <Text style={styles.label}>Username</Text>
                 {usernameIsValid ? (
                   <View style={styles.successBadge}>
@@ -566,7 +526,11 @@ export default function SignUpScreen() {
                 placeholder="your.name"
                 value={username}
                 onChangeText={handleUsernameChange}
+                onFocus={() => setFocusedField("username")}
                 onBlur={() => {
+                  setFocusedField((currentField) =>
+                    currentField === "username" ? null : currentField
+                  );
                   setFieldTouched("username");
                   setUsernameError(validateUsername(normalizedUsername));
                 }}
@@ -580,6 +544,8 @@ export default function SignUpScreen() {
                 ]}
                 autoCapitalize="none"
                 autoCorrect={false}
+                autoComplete="username"
+                textContentType="username"
                 placeholderTextColor="#9ca3af"
               />
               {showUsernameError ? (
@@ -601,6 +567,79 @@ export default function SignUpScreen() {
               ) : (
                 <Text style={[styles.helperText, compactLayout && styles.helperTextCompact]}>
                   3-24 characters. Letters, numbers, periods, and underscores.
+                </Text>
+              )}
+            </View>
+
+            <View style={[styles.fieldGroup, compactLayout && styles.fieldGroupCompact]}>
+              <View style={styles.fieldHeader}>
+                <Text style={styles.label}>Password</Text>
+                {isPasswordValid ? (
+                  <View style={styles.successBadge}>
+                    <Ionicons name="checkmark-circle" size={16} color="#15803d" />
+                    <Text style={styles.successBadgeText}>Strong</Text>
+                  </View>
+                ) : null}
+              </View>
+              <TextInput
+                placeholder="Create a password"
+                value={password}
+                onChangeText={handlePasswordChange}
+                onFocus={() => setFocusedField("password")}
+                onBlur={() => {
+                  setFocusedField((currentField) =>
+                    currentField === "password" ? null : currentField
+                  );
+                  setFieldTouched("password");
+                  setPasswordError(
+                    passwordRules.every((rule) => rule.met)
+                      ? ""
+                      : "Password does not meet the required rules."
+                  );
+                }}
+                style={[
+                  styles.input,
+                  compactLayout && styles.inputCompact,
+                  getInputStateStyle({
+                    hasError: showPasswordError,
+                    isValid: touched.password && isPasswordValid,
+                  }),
+                ]}
+                secureTextEntry
+                textContentType="newPassword"
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholderTextColor="#9ca3af"
+              />
+              {shouldShowPasswordRules ? (
+                <View style={[styles.rulesCard, compactLayout && styles.rulesCardCompact]}>
+                  {passwordRules.map((rule) => (
+                    <View key={rule.key} style={styles.ruleRow}>
+                      <Ionicons
+                        name={rule.met ? "checkmark-circle" : "ellipse-outline"}
+                        size={18}
+                        color={rule.met ? "#15803d" : "#94a3b8"}
+                      />
+                      <Text
+                        style={[
+                          styles.ruleText,
+                          compactLayout && styles.ruleTextCompact,
+                          rule.met ? styles.ruleTextMet : null,
+                        ]}
+                      >
+                        {rule.label}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+              {showPasswordError ? (
+                <Text style={styles.errorText}>{passwordError}</Text>
+              ) : (
+                <Text style={[styles.helperText, compactLayout && styles.helperTextCompact]}>
+                  {shouldShowPasswordRules
+                    ? "Use a password you have not used elsewhere."
+                    : "Focus this field to review the password rules."}
                 </Text>
               )}
             </View>
@@ -651,7 +690,7 @@ export default function SignUpScreen() {
           </View>
         </View>
       </KeyboardAvoidingView>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -665,29 +704,29 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    justifyContent: "flex-start",
+    justifyContent: "space-between",
     paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 18,
+    paddingTop: 14,
+    paddingBottom: 14,
   },
   contentCompact: {
     paddingHorizontal: 16,
-    paddingTop: 14,
-    paddingBottom: 12,
-  },
-  contentUltraCompact: {
     paddingTop: 10,
     paddingBottom: 10,
   },
+  contentUltraCompact: {
+    paddingTop: 8,
+    paddingBottom: 8,
+  },
   hero: {
-    marginBottom: 14,
+    marginBottom: 8,
     alignItems: "center",
   },
   heroCompact: {
-    marginBottom: 10,
+    marginBottom: 7,
   },
   heroUltraCompact: {
-    marginBottom: 8,
+    marginBottom: 6,
   },
   brand: {
     fontSize: 38,
@@ -701,38 +740,25 @@ const styles = StyleSheet.create({
   brandUltraCompact: {
     fontSize: 30,
   },
-  title: {
-    marginTop: 12,
-    fontSize: 24,
-    fontWeight: "800",
-    color: "#111827",
-    textAlign: "center",
-  },
-  titleCompact: {
-    marginTop: 6,
-    fontSize: 22,
-  },
-  subtitle: {
+  stepBadge: {
     marginTop: 8,
-    fontSize: 15,
-    lineHeight: 22,
-    color: "#6b7280",
-    textAlign: "center",
+    borderRadius: 999,
+    backgroundColor: "#fff0b8",
+    paddingHorizontal: 12,
+    paddingVertical: 5,
   },
-  subtitleCompact: {
-    marginTop: 6,
-    fontSize: 14,
-    lineHeight: 19,
-  },
-  subtitleUltraCompact: {
-    fontSize: 13,
-    lineHeight: 17,
+  stepBadgeText: {
+    color: "#7c5d00",
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
   },
   card: {
     backgroundColor: "#ffffff",
     borderRadius: 24,
     paddingHorizontal: 16,
-    paddingVertical: 18,
+    paddingVertical: 15,
     borderWidth: 1,
     borderColor: "#ece8dc",
     shadowColor: "#000000",
@@ -744,16 +770,16 @@ const styles = StyleSheet.create({
   cardCompact: {
     borderRadius: 20,
     paddingHorizontal: 14,
-    paddingVertical: 14,
-  },
-  cardUltraCompact: {
     paddingVertical: 12,
   },
+  cardUltraCompact: {
+    paddingVertical: 10,
+  },
   fieldGroup: {
-    marginBottom: 14,
+    marginBottom: 12,
   },
   fieldGroupCompact: {
-    marginBottom: 10,
+    marginBottom: 9,
   },
   fieldHeader: {
     flexDirection: "row",
@@ -772,13 +798,13 @@ const styles = StyleSheet.create({
     borderColor: "#d1d5db",
     borderRadius: 14,
     paddingHorizontal: 14,
-    paddingVertical: 13,
+    paddingVertical: 12,
     fontSize: 15,
     color: "#111827",
     backgroundColor: "#ffffff",
   },
   inputCompact: {
-    paddingVertical: 10,
+    paddingVertical: 9,
     fontSize: 14,
   },
   inputError: {
@@ -790,8 +816,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#f0fdf4",
   },
   rulesCard: {
-    marginTop: 10,
-    padding: 10,
+    marginTop: 8,
+    padding: 9,
     borderRadius: 14,
     backgroundColor: "#f8fafc",
     borderWidth: 1,
@@ -800,8 +826,8 @@ const styles = StyleSheet.create({
   },
   rulesCardCompact: {
     marginTop: 6,
-    padding: 8,
-    gap: 6,
+    padding: 7,
+    gap: 5,
   },
   ruleRow: {
     flexDirection: "row",
@@ -871,11 +897,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "#111827",
     borderRadius: 14,
-    paddingVertical: 15,
+    minHeight: 50,
+    paddingHorizontal: 18,
     marginTop: 4,
   },
   primaryButtonCompact: {
-    paddingVertical: 13,
+    minHeight: 46,
     marginTop: 2,
   },
   primaryButtonDisabled: {
@@ -894,11 +921,11 @@ const styles = StyleSheet.create({
   secondaryAction: {
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 14,
+    paddingVertical: 12,
     marginTop: 6,
   },
   secondaryActionCompact: {
-    paddingVertical: 10,
+    paddingVertical: 8,
     marginTop: 4,
   },
   secondaryActionText: {
@@ -907,9 +934,9 @@ const styles = StyleSheet.create({
     color: "#4b5563",
   },
   legalLink: {
-    marginTop: 14,
+    marginTop: 6,
   },
   legalLinkCompact: {
-    marginTop: 10,
+    marginTop: 5,
   },
 });

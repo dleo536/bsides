@@ -23,7 +23,11 @@ import {
   unlikeList,
 } from "../api/ListAPI";
 import { submitContentReport } from "../api/ModerationAPI";
-import { getFullUserByUid, getUsernameByUID } from "../api/UserAPI";
+import {
+  getFullUserByUid,
+  getUserByIdentifier,
+  getUsernameByUID,
+} from "../api/UserAPI";
 import ListEditModal from "../components/ListEditModal";
 import ListOptionsSheet from "../components/ListOptionsSheet";
 import ReportContentModal from "../components/ReportContentModal";
@@ -339,6 +343,29 @@ export default function ListPage() {
     [editSaving, listId, refreshListData]
   );
 
+  const handleOpenCreatorProfile = useCallback(async () => {
+    const creatorIdentifier = listData?.ownerId || listData?.userID;
+    if (!creatorIdentifier) {
+      return;
+    }
+
+    try {
+      const nextUser = await getUserByIdentifier(creatorIdentifier);
+      if (!nextUser?.id && !nextUser?.uid) {
+        Alert.alert("User unavailable", "We could not open that profile right now.");
+        return;
+      }
+
+      navigation.push("UserPage", {
+        user: nextUser,
+        key: Math.round(Math.random() * 10000000),
+      });
+    } catch (error) {
+      console.error("List creator navigation error:", error);
+      Alert.alert("User unavailable", "We could not open that profile right now.");
+    }
+  }, [listData?.ownerId, listData?.userID, navigation]);
+
   const handleSubmitReport = useCallback(
     async ({ reason, details }) => {
       if (!listData?.id) {
@@ -434,10 +461,7 @@ export default function ListPage() {
           >
             <Ionicons name="arrow-back" size={24} color="#111827" />
           </TouchableOpacity>
-          <View style={styles.headerTitleBlock}>
-            <Text style={styles.title}>{listData.listName}</Text>
-            {creatorName ? <Text style={styles.creator}>By @{creatorName}</Text> : null}
-          </View>
+          <View style={styles.headerSpacer} />
           <View style={styles.headerActions}>
             <TouchableOpacity
               onPress={() => setOptionsVisible(true)}
@@ -474,6 +498,15 @@ export default function ListPage() {
           </View>
         </View>
 
+        {creatorName ? (
+          <TouchableOpacity
+            onPress={handleOpenCreatorProfile}
+            activeOpacity={0.75}
+            style={styles.creatorLink}
+          >
+            <Text style={styles.creator}>@{creatorName}</Text>
+          </TouchableOpacity>
+        ) : null}
         {listData.listDescription ? (
           <Text style={styles.description}>{listData.listDescription}</Text>
         ) : (
@@ -482,7 +515,7 @@ export default function ListPage() {
         {formattedDate ? <Text style={styles.date}>{formattedDate}</Text> : null}
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Albums</Text>
+          <Text style={styles.sectionTitle}>{listData.listName}</Text>
           <Text style={styles.sectionMeta}>
             {albumEntries.length || albumIds.length} item
             {(albumEntries.length || albumIds.length) === 1 ? "" : "s"}
@@ -577,7 +610,7 @@ const styles = StyleSheet.create({
     padding: 6,
     borderRadius: 999,
   },
-  headerTitleBlock: {
+  headerSpacer: {
     flex: 1,
   },
   headerActions: {
@@ -591,9 +624,13 @@ const styles = StyleSheet.create({
     color: "#111827",
   },
   creator: {
-    marginTop: 4,
     fontSize: 14,
-    color: "#6b7280",
+    fontWeight: "700",
+    color: "#111827",
+  },
+  creatorLink: {
+    marginBottom: 8,
+    alignSelf: "flex-start",
   },
   likeButton: {
     flexDirection: "row",
@@ -692,7 +729,7 @@ const styles = StyleSheet.create({
   albumCover: {
     width: "100%",
     height: TILE_WIDTH,
-    borderRadius: 8,
+    borderRadius: 3,
     backgroundColor: "#e5e7eb",
   },
   albumCoverFallback: {

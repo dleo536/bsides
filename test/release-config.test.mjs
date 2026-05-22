@@ -51,7 +51,10 @@ test("package version stays aligned with Expo version", () => {
 
 test("iOS native config stays aligned with Expo identity and version", () => {
   assert.match(iosInfoPlist, new RegExp(`<string>${expectedScheme}</string>`));
-  assert.match(iosProject, new RegExp(`PRODUCT_BUNDLE_IDENTIFIER = "${expectedBundleId}"`, "g"));
+  assert.match(
+    iosProject,
+    new RegExp(`PRODUCT_BUNDLE_IDENTIFIER = "?${expectedBundleId}"?`, "g")
+  );
 
   const iosShortVersion = capture(
     /<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/,

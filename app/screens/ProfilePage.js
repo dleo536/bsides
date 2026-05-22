@@ -35,6 +35,7 @@ import { getAlbum } from "../api/SpotifyAPI";
 import {
   changeCurrentUserPassword,
   deleteCurrentUserAccount,
+  getCurrentUserProfile,
 } from "../api/UserAPI";
 import ListElement from "../components/listElement";
 
@@ -118,6 +119,25 @@ const formatJoinLabel = (creationTime) => {
   }
 
   return `Joined ${date.getFullYear()}`;
+};
+
+const mergeAuthUserWithProfile = (authUser, profile) => {
+  if (!authUser && !profile) {
+    return null;
+  }
+
+  return {
+    ...(authUser ? { ...authUser } : {}),
+    ...(profile || {}),
+    uid: authUser?.uid || profile?.uid || null,
+    email: profile?.email || authUser?.email || null,
+    metadata: authUser?.metadata || profile?.metadata,
+    photoURL:
+      authUser?.photoURL ||
+      profile?.photoURL ||
+      profile?.avatarUrl ||
+      null,
+  };
 };
 
 const formatHistoryDate = (value) => {
@@ -724,6 +744,7 @@ const ProfileTab = () => {
   const loadProfileData = useCallback(
     async (firebaseUser = auth.currentUser) => {
       if (!firebaseUser?.uid) {
+        setUser(null);
         setLists([]);
         setTopAlbums([]);
         setLikedListsCount(0);
@@ -735,10 +756,13 @@ const ProfileTab = () => {
       setProfileDataLoading(true);
 
       try {
-        const [listsResult, likedListsResult] = await Promise.allSettled([
+        const [profileResult, listsResult, likedListsResult] = await Promise.allSettled([
+          getCurrentUserProfile({ forceRefresh: true }),
           getListByUID(firebaseUser.uid),
           getMyLikedLists(firebaseUser.uid, { offset: 0, limit: 1 }),
         ]);
+        const nextProfile =
+          profileResult.status === "fulfilled" ? profileResult.value || null : null;
         const nextLists =
           listsResult.status === "fulfilled" && Array.isArray(listsResult.value)
             ? listsResult.value
@@ -748,11 +772,13 @@ const ProfileTab = () => {
             ? Number(likedListsResult.value?.totalCount || 0)
             : 0;
 
+        setUser(mergeAuthUserWithProfile(firebaseUser, nextProfile));
         setLists(nextLists);
         setLikedListsCount(nextLikedListsCount);
         await loadTopAlbums(nextLists);
       } catch (error) {
         console.error("Profile data load error:", error);
+        setUser(mergeAuthUserWithProfile(firebaseUser, null));
         setLists([]);
         setTopAlbums([]);
         setLikedListsCount(0);
@@ -767,7 +793,7 @@ const ProfileTab = () => {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
       if (nextUser) {
-        setUser(nextUser);
+        setUser(mergeAuthUserWithProfile(nextUser, null));
         loadProfileData(nextUser);
       } else {
         navigation.replace("Landing");
@@ -1153,6 +1179,9 @@ const ProfileTab = () => {
                   <Text style={styles.metaChipText}>{favoriteCount} in Favorites</Text>
                 </View>
               </View>
+              {typeof user?.bio === "string" && user.bio.trim() ? (
+                <Text style={styles.heroBioText}>{user.bio.trim()}</Text>
+              ) : null}
             </View>
 
             <View style={styles.canvasDivider} />
@@ -1639,6 +1668,14 @@ const styles = StyleSheet.create({
     fontSize: 27,
     fontWeight: "800",
     color: "#111827",
+  },
+  heroBioText: {
+    marginTop: 14,
+    maxWidth: 320,
+    fontSize: 14,
+    lineHeight: 21,
+    color: "#4b5563",
+    textAlign: "center",
   },
   metaRow: {
     flexDirection: "row",

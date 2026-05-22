@@ -12,6 +12,7 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { StatusBar } from "expo-status-bar";
 import * as ImagePicker from "expo-image-picker";
 import { updateProfile } from "firebase/auth";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -19,6 +20,7 @@ import { useNavigation } from "@react-navigation/native";
 import { auth, storage } from "../config/firebase";
 import { updateCurrentUserProfile } from "../api/UserAPI";
 import defaultProfileImage from "../../assets/defaultProfilePicture.png";
+import { clearSignupOnboardingState } from "../logic/onboardingFlow";
 
 const ProfilePicturePage = () => {
   const navigation = useNavigation();
@@ -41,6 +43,7 @@ const ProfilePicturePage = () => {
     : "Add a face to your profile. You can always change this later.";
 
   const finishOnboarding = async () => {
+    await clearSignupOnboardingState();
     navigation.replace("Welcome");
   };
 
@@ -144,6 +147,7 @@ const ProfilePicturePage = () => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <StatusBar style="dark" />
       <View
         style={[
           styles.page,
@@ -168,7 +172,7 @@ const ProfilePicturePage = () => {
             b.sides
           </Text>
           <View style={styles.optionalBadge}>
-            <Text style={styles.optionalBadgeText}>Optional step</Text>
+            <Text style={styles.optionalBadgeText}>Step 3 of 3</Text>
           </View>
           <Text style={[styles.title, compactLayout && styles.titleCompact]}>
             Add a profile photo
@@ -295,26 +299,26 @@ const styles = StyleSheet.create({
   },
   page: {
     flex: 1,
-    justifyContent: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 22,
-    paddingVertical: 28,
+    paddingVertical: 18,
   },
   pageCompact: {
     paddingHorizontal: 18,
-    paddingVertical: 18,
+    paddingVertical: 14,
   },
   pageUltraCompact: {
-    paddingVertical: 12,
+    paddingVertical: 10,
   },
   header: {
     alignItems: "center",
-    marginBottom: 24,
+    marginBottom: 16,
   },
   headerCompact: {
-    marginBottom: 18,
+    marginBottom: 12,
   },
   headerUltraCompact: {
-    marginBottom: 14,
+    marginBottom: 10,
   },
   brand: {
     fontSize: 38,
@@ -341,7 +345,7 @@ const styles = StyleSheet.create({
   optionalBadgeText: {
     color: "#7c5d00",
     fontSize: 12,
-    fontWeight: "700",
+    fontWeight: "800",
     letterSpacing: 0.4,
     textTransform: "uppercase",
   },
@@ -379,7 +383,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff",
     borderRadius: 28,
     paddingHorizontal: 24,
-    paddingVertical: 28,
+    paddingVertical: 22,
     alignItems: "center",
     shadowColor: "#111827",
     shadowOpacity: 0.08,
@@ -390,17 +394,17 @@ const styles = StyleSheet.create({
   cardCompact: {
     borderRadius: 24,
     paddingHorizontal: 18,
-    paddingVertical: 20,
+    paddingVertical: 18,
   },
   cardUltraCompact: {
     borderRadius: 22,
-    paddingVertical: 16,
+    paddingVertical: 14,
   },
   previewButton: {
-    marginBottom: 20,
+    marginBottom: 16,
   },
   previewButtonCompact: {
-    marginBottom: 14,
+    marginBottom: 12,
   },
   previewRing: {
     width: 168,
@@ -458,12 +462,12 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     color: "#6b7280",
     textAlign: "center",
-    marginBottom: 18,
+    marginBottom: 16,
   },
   previewSubtitleCompact: {
     fontSize: 13,
     lineHeight: 18,
-    marginBottom: 14,
+    marginBottom: 12,
   },
   errorBanner: {
     width: "100%",
@@ -490,7 +494,7 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     width: "100%",
-    minHeight: 54,
+    minHeight: 50,
     borderRadius: 16,
     backgroundColor: "#111827",
     alignItems: "center",
@@ -499,7 +503,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   buttonCompact: {
-    minHeight: 48,
+    minHeight: 46,
     marginBottom: 8,
   },
   primaryButtonText: {
@@ -509,7 +513,7 @@ const styles = StyleSheet.create({
   },
   secondaryButton: {
     width: "100%",
-    minHeight: 50,
+    minHeight: 46,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: "#e5e7eb",
@@ -520,12 +524,12 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   secondaryButtonCompact: {
-    minHeight: 46,
+    minHeight: 42,
     marginBottom: 6,
   },
   secondaryButtonText: {
     color: "#111827",
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "600",
   },
   skipButton: {
@@ -539,7 +543,7 @@ const styles = StyleSheet.create({
   },
   skipButtonText: {
     color: "#6b7280",
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "600",
   },
   footnote: {

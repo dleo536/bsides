@@ -16,6 +16,7 @@ import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth } from "../config/firebase";
+import { getPostAuthRouteForUser } from "../logic/onboardingFlow";
 import heroFallbackImage from "../../assets/ChatGPT Image Apr 2, 2025, 09_32_29 PM.png";
 import logoImage from "../../assets/Color logo - no background.png";
 import LegalAccessLink from "../components/LegalAccessLink";
@@ -122,13 +123,30 @@ export default function LandingPage() {
   const shouldUseVideoHero = true;
 
   useEffect(() => {
+    let cancelled = false;
+
     const unsubscribe = auth.onAuthStateChanged((user) => {
-      if (user) {
-        navigation.replace("Welcome");
+      if (!user) {
+        return;
       }
+
+      getPostAuthRouteForUser(user)
+        .then((routeName) => {
+          if (!cancelled) {
+            navigation.replace(routeName);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            navigation.replace("Welcome");
+          }
+        });
     });
 
-    return unsubscribe;
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [navigation]);
 
   return (

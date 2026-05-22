@@ -418,6 +418,38 @@ export const changeCurrentUserPassword = async (newPassword) => {
   }
 };
 
+export const updateCurrentUserOnboardingDetails = async (details = {}) => {
+  try {
+    const response = await apiFetch(
+      "/users/me/onboarding-details",
+      {
+        method: "PATCH",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(details),
+      },
+      { authRequired: true }
+    );
+    const data = await parseJsonSafely(response, "PATCH /users/me/onboarding-details");
+
+    if (!response.ok || !data?.user) {
+      const error = new Error(data?.message || "Could not save your onboarding details");
+      error.status = response.status;
+      error.payload = data;
+      throw error;
+    }
+
+    currentUserProfileCache = withCurrentAuthShape(data.user);
+    cacheResolvedUser(currentUserProfileCache, auth.currentUser?.uid ?? null);
+    return data;
+  } catch (error) {
+    console.error("Failed to update onboarding details");
+    throw error;
+  }
+};
+
 export const updateCurrentUserProfile = async (updates = {}) => {
   try {
     const response = await apiFetch("/users/me", {

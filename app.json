@@ -18,7 +18,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "pro.bsides.app",
-      "buildNumber": "14"
+      "buildNumber": "17"
     },
     "android": {
       "adaptiveIcon": {

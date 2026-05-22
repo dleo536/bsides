@@ -177,6 +177,8 @@ const UserPage = () => {
   const profileUsername = profileIdentity.username;
   const profileHandle = profileIdentity.handle;
   const profileSecondaryLabel = profileIdentity.subtitle;
+  const profileBio =
+    typeof profileUser?.bio === "string" ? profileUser.bio.trim() : "";
   const followersCount = profileUser?.followersCount ?? 0;
   const followingCount = profileUser?.followingCount ?? 0;
   const blockedByYou = Boolean(blockState?.blockedByYou);
@@ -650,6 +652,7 @@ const UserPage = () => {
                 {profileSecondaryLabel}
               </Text>
             ) : null}
+            {profileBio ? <Text style={styles.bioText}>{profileBio}</Text> : null}
           </View>
           {/* --- Follow Button --- */}
           {!isOwnProfile && (
@@ -864,6 +867,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "gray",
     marginTop: 4,
+  },
+  bioText: {
+    marginTop: 8,
+    fontSize: 14,
+    lineHeight: 20,
+    color: "#4b5563",
   },
   statsRow: {
     flexDirection: "row",

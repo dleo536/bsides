@@ -18,6 +18,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { auth } from "../config/firebase";
 import LegalAccessLink from "../components/LegalAccessLink";
+import { getPostAuthRouteForUser } from "../logic/onboardingFlow";
 
 export default function SignInScreen() {
   const navigation = useNavigation();
@@ -30,13 +31,28 @@ export default function SignInScreen() {
   const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
+    let cancelled = false;
+
     const unsubscribe = auth.onAuthStateChanged((user) => {
       if (user && !isSubmitting) {
-        navigation.replace("Welcome");
+        getPostAuthRouteForUser(user)
+          .then((routeName) => {
+            if (!cancelled) {
+              navigation.replace(routeName);
+            }
+          })
+          .catch(() => {
+            if (!cancelled) {
+              navigation.replace("Welcome");
+            }
+          });
       }
     });
 
-    return unsubscribe;
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [isSubmitting, navigation]);
 
   const handleLogin = async () => {

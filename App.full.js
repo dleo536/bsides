@@ -30,6 +30,11 @@ function SignUpScreen(props) {
   return <Screen {...props} />;
 }
 
+function SignUpDetailsScreen(props) {
+  const Screen = require("./app/screens/SignUpDetailsScreen").default;
+  return <Screen {...props} />;
+}
+
 function ProfilePicturePage(props) {
   const Screen = require("./app/screens/ProfilePicture").default;
   return <Screen {...props} />;
@@ -85,6 +90,11 @@ export default function FullApp() {
             options={{ headerShown: false }}
             name="Sign Up"
             component={SignUpScreen}
+          ></Stack.Screen>
+          <Stack.Screen
+            options={{ headerShown: false }}
+            name="User Details"
+            component={SignUpDetailsScreen}
           ></Stack.Screen>
           <Stack.Screen
             options={{ headerShown: false }}

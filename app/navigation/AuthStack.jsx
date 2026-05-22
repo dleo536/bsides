@@ -5,6 +5,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import WelcomeScreen from '../screens/Welcome';
 import SignInScreen from '../screens/SignInScreen';
 import SignUpScreen from '../screens/SignUpScreen';
+import SignUpDetailsScreen from '../screens/SignUpDetailsScreen';
 import ProfilePicturePage from '../screens/ProfilePicture';
 
 const Stack = createStackNavigator();
@@ -18,6 +19,16 @@ export default function AuthStack() {
         <Stack.Screen
           name="Sign Up"
           component={SignUpScreen}
+          options={{
+            headerShown: false,
+            headerLeft: () => null,
+            headerBackVisible: false,
+            gestureEnabled: false,
+          }}
+        />
+        <Stack.Screen
+          name="User Details"
+          component={SignUpDetailsScreen}
           options={{
             headerShown: false,
             headerLeft: () => null,
